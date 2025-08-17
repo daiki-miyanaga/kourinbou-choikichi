@@ -50,18 +50,23 @@ export default function GamePage() {
   }, [])
 
   return (
-    <main style={{ padding: 24 }}>
+    <main style={{ padding: 16, maxWidth: 480, margin: '0 auto' }}>
       <h1>Game</h1>
       <p>6×6 マッチ3 のプロトタイプ（タップで隣と入替）</p>
-      <div ref={containerRef} style={{ width: 420, height: 480, border: '1px solid #333' }} />
+      <div
+        ref={containerRef}
+        style={{ width: '100%', maxWidth: 420, height: 480, aspectRatio: '7 / 8', margin: '0 auto', border: '1px solid #333' }}
+      />
       {/* ママはゲーム枠外に表示 */}
       <img
         src={asset('/images/characters/mama/mama-left.png')}
         alt="ママ"
-        style={{ display: 'block', marginTop: 8, height: 120 }}
+        style={{ display: 'block', margin: '8px auto 0', height: 120 }}
       />
       {log.length > 0 && (
-        <pre style={{ marginTop: 16, background: '#111', color: '#0f0', padding: 12, fontSize: 12, maxWidth: 420, whiteSpace: 'pre-wrap' }}>
+        <pre
+          style={{ marginTop: 16, background: '#111', color: '#0f0', padding: 12, fontSize: 12, maxWidth: 420, whiteSpace: 'pre-wrap', marginLeft: 'auto', marginRight: 'auto' }}
+        >
           {log.join('\n')}
         </pre>
       )}

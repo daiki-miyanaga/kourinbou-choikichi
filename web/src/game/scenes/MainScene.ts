@@ -6,6 +6,7 @@ const TILE = 64
 const PADDING = 8
 const W = COLS * TILE
 const H = ROWS * TILE
+const SELECT_LIFT = 6
 
 type TileGO = Phaser.GameObjects.Image & { r: number; c: number; v: number }
 
@@ -137,13 +138,14 @@ export default class MainScene extends Phaser.Scene {
 
   pulse(r: number, c: number, on: boolean) {
     const t = this.tiles[r][c]
-    // スケール変化は端末によって見た目が崩れることがあるため、
-    // 選択中はティントでハイライトする
+    const { y } = this.boardToWorld(r, c)
     if (on) {
-      t.setTint(0xffffaa)
+      t.setDepth(1).setTint(0xffffaa)
+      this.tweens.add({ targets: t, y: y - SELECT_LIFT, duration: 80, ease: 'Sine.easeOut' })
     } else {
+      t.setDepth(0)
+      this.tweens.add({ targets: t, y, duration: 80, ease: 'Sine.easeIn' })
       t.clearTint()
-      t.setScale(1)
     }
   }
 
