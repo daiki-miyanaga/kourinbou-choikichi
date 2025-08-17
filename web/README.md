@@ -26,3 +26,6 @@ npm run dev
   - 連鎖ごとにコンボ倍率（×1 → ×1.2 → ×1.5 → ×2 → ×3 → ×5）
   - タイムアップでリザルト＋コメント表示、[Restart] で再開
   - アイテム画像: `/public/images/items/`（`gyusuji.svg`, `edamame.svg`, `potatosalad.svg`, `sausage.svg`）
+  - 実画像に差し替え済み: `gyuusuji.png`, `edamame.png`, `potatosalad.png`, `sausage.png`
+  - 背景: `/public/images/backgrounds/choikichi.jpg`
+  - ママ: `/public/images/characters/mama/mama-left.png` を盤面下に表示

@@ -26,11 +26,14 @@ export default class MainScene extends Phaser.Scene {
   }
 
   preload() {
-    // 公開ディレクトリのアイテム画像を読み込み
-    this.load.image('item-gyusuji', '/images/items/gyusuji.svg')
-    this.load.image('item-edamame', '/images/items/edamame.svg')
-    this.load.image('item-potatosalad', '/images/items/potatosalad.svg')
-    this.load.image('item-sausage', '/images/items/sausage.svg')
+    // 公開ディレクトリのアイテム画像（実素材）を読み込み
+    this.load.image('item-gyusuji', '/images/items/gyuusuji.png')
+    this.load.image('item-edamame', '/images/items/edamame.png')
+    this.load.image('item-potatosalad', '/images/items/potatosalad.png')
+    this.load.image('item-sausage', '/images/items/sausage.png')
+    // 背景とママ
+    this.load.image('bg-choikichi', '/images/backgrounds/choikichi.jpg')
+    this.load.image('mama-left', '/images/characters/mama/mama-left.png')
   }
 
   keyFor(v: number) {
@@ -45,6 +48,9 @@ export default class MainScene extends Phaser.Scene {
 
   create() {
     this.cameras.main.setBackgroundColor('#0b0f19')
+    // 背景をカメラ全体にフィット
+    const cam = this.cameras.main
+    this.add.image(0, 0, 'bg-choikichi').setOrigin(0, 0).setDisplaySize(cam.width, cam.height).setDepth(-10)
     // 画像は preload 済みの item-* を使用
 
     this.board = createBoard(ROWS, COLS, TYPES)
@@ -59,6 +65,18 @@ export default class MainScene extends Phaser.Scene {
     this.uiScore = this.add.text(16, 8, 'SCORE 0', { fontFamily: 'monospace', fontSize: '18px', color: '#e6e9ef' })
     this.uiTime = this.add.text(300, 8, 'TIME 60', { fontFamily: 'monospace', fontSize: '18px', color: '#e6e9ef' })
     this.startTimer()
+
+    // ママ画像を盤面下に配置
+    const bottomY = this.originY + ROWS * TILE + 8
+    const mama = this.add.image(this.originX - 8, bottomY, 'mama-left').setOrigin(0, 1).setDepth(5)
+    const src = this.textures.get('mama-left').getSourceImage() as HTMLImageElement
+    if (src && src.height) {
+      const desiredH = 120
+      const ratio = src.width / src.height
+      mama.setDisplaySize(desiredH * ratio, desiredH)
+    } else {
+      mama.setScale(0.25)
+    }
   }
 
   createGrid() {
