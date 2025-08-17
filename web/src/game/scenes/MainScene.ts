@@ -143,7 +143,6 @@ export default class MainScene extends Phaser.Scene {
       t.setTint(0xffffaa)
     } else {
       t.clearTint()
-      t.setScale(1)
     }
   }
 
