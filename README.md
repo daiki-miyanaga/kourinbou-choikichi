@@ -1,4 +1,4 @@
-# katamachi-choikichi
+# kourinbou-choikichi
 
 片町エリアの回遊体験を向上させるためのアプリケーション（仮）。
 
@@ -13,18 +13,3 @@
 ## ドキュメント
 - 要件定義: `仕様書.md`
 
-## 開発
-ローカル起動:
-
-```
-cd web
-npm install
-npm run dev
-```
-
-ビルド/起動:
-
-```
-npm run build
-npm run start
-```
