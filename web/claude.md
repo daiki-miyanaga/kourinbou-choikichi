@@ -13,3 +13,4 @@
 - GitHub Pages 公開対応：`output: export`、`basePath` 対応、`gh-pages` ブランチに静的書き出し配置
 - トップに「ゲームをプレイする」導線追加
 - ページでの 404（%20 混入）を修正（`basePath.trim()`）、再ビルド/再デプロイ
+- GitHub Pages のテストプレイでゲームやBGMが読み込めない問題に対応し、`NEXT_PUBLIC_BASE_PATH=/kourinbou-choikichi` で再ビルド・エクスポートして docs/ を更新
