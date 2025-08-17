@@ -9,9 +9,9 @@
 
 命名規則（分割する場合）
 - 立ち: `mama-standing.png`
-- 歩き1: `mama-walk-01.png`
+- 左向き: `mama-left.png`
 - 歩き2: `mama-walk-02.png`
-- 喜ぶ: `mama-happy.png`
+- 喜ぶ: `mama-banzai.png`
 - 指差し: `mama-point.png`
 - 手招き: `mama-call.png`
 
