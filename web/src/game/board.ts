@@ -67,6 +67,46 @@ export function findMatches(b: Board) {
   return matches
 }
 
+// スコア算出用に、横/縦の「連続数」を収集（3以上のみ）
+export function collectRuns(b: Board) {
+  const runs: number[] = []
+  // horizontal runs
+  for (let r = 0; r < b.length; r++) {
+    let run = 1
+    for (let c = 1; c <= b[r].length; c++) {
+      if (c < b[r].length && b[r][c] !== 0 && b[r][c] === b[r][c - 1]) {
+        run++
+      } else {
+        if (run >= 3) runs.push(run)
+        run = 1
+      }
+    }
+  }
+  // vertical runs
+  for (let c = 0; c < b[0].length; c++) {
+    let run = 1
+    for (let r = 1; r <= b.length; r++) {
+      if (r < b.length && b[r][c] !== 0 && b[r][c] === b[r - 1][c]) {
+        run++
+      } else {
+        if (run >= 3) runs.push(run)
+        run = 1
+      }
+    }
+  }
+  return runs
+}
+
+export function scoreForRuns(runs: number[]) {
+  // 基本: 1個=100点、4個ボーナス+500、5個以上は基本点のみ（特別アイテムは未実装）
+  let score = 0
+  for (const n of runs) {
+    score += 100 * n
+    if (n === 4) score += 500
+  }
+  return score
+}
+
 export function clearMatches(b: Board, matches: Set<string>) {
   for (const key of matches) {
     const [r, c] = key.split(',').map(Number)
@@ -95,4 +135,3 @@ export function collapseAndRefill(b: Board, types = TYPES) {
 export function isAdjacent(r1: number, c1: number, r2: number, c2: number) {
   return (Math.abs(r1 - r2) + Math.abs(c1 - c2)) === 1
 }
-

@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { Board, COLS, ROWS, TYPES, createBoard, findMatches, clearMatches, collapseAndRefill, isAdjacent, swap } from '../board'
+import { Board, COLS, ROWS, TYPES, createBoard, findMatches, clearMatches, collapseAndRefill, isAdjacent, swap, collectRuns, scoreForRuns } from '../board'
 
 const TILE = 64
 const PADDING = 8
@@ -14,6 +14,12 @@ export default class MainScene extends Phaser.Scene {
   originX = 0
   originY = 0
   selected: { r: number; c: number } | null = null
+  score = 0
+  timeLeft = 60
+  comboLevel = 0
+  uiScore!: Phaser.GameObjects.Text
+  uiTime!: Phaser.GameObjects.Text
+  ticking?: Phaser.Time.TimerEvent
 
   constructor() {
     super('MainScene')
@@ -40,6 +46,11 @@ export default class MainScene extends Phaser.Scene {
 
     this.input.on('pointerdown', this.onPointerDown, this)
     this.input.on('pointerup', this.onPointerUp, this)
+
+    // UI
+    this.uiScore = this.add.text(16, 8, 'SCORE 0', { fontFamily: 'monospace', fontSize: '18px', color: '#e6e9ef' })
+    this.uiTime = this.add.text(300, 8, 'TIME 60', { fontFamily: 'monospace', fontSize: '18px', color: '#e6e9ef' })
+    this.startTimer()
   }
 
   createGrid() {
@@ -82,6 +93,7 @@ export default class MainScene extends Phaser.Scene {
 
   onPointerUp(pointer: Phaser.Input.Pointer) {
     if (!this.selected) return
+    if (this.timeLeft <= 0) return
     const from = this.selected
     this.pulse(from.r, from.c, false)
     this.selected = null
@@ -124,9 +136,18 @@ export default class MainScene extends Phaser.Scene {
   }
 
   async resolveMatches() {
+    this.comboLevel = 0
     while (true) {
       const matches = findMatches(this.board)
       if (matches.size === 0) break
+      // スコア計算
+      const runs = collectRuns(this.board)
+      const base = scoreForRuns(runs)
+      const multSeq = [1, 1.2, 1.5, 2, 3, 5]
+      const mult = multSeq[Math.min(this.comboLevel, multSeq.length - 1)]
+      const gained = Math.round(base * mult)
+      this.score += gained
+      if (this.uiScore) this.uiScore.setText(`SCORE ${this.score}`)
       // fade out matched
       await new Promise<void>((resolve) => {
         const tgs: Phaser.GameObjects.Image[] = []
@@ -153,7 +174,48 @@ export default class MainScene extends Phaser.Scene {
 
       // rebuild tile gameobjects for nulls and animate fall
       await this.animateCollapse()
+      this.comboLevel++
     }
+  }
+
+  startTimer() {
+    this.timeLeft = 60
+    if (this.uiTime) this.uiTime.setText(`TIME ${this.timeLeft}`)
+    this.ticking?.remove(false)
+    this.ticking = this.time.addEvent({ delay: 1000, loop: true, callback: () => {
+      this.timeLeft--
+      if (this.uiTime) this.uiTime.setText(`TIME ${Math.max(0, this.timeLeft)}`)
+      if (this.timeLeft <= 0) {
+        this.endGame()
+      }
+    } })
+  }
+
+  endGame() {
+    this.ticking?.remove(false)
+    this.input.off('pointerdown', this.onPointerDown, this)
+    this.input.off('pointerup', this.onPointerUp, this)
+    const w = 360, h = 200
+    const x = (this.cameras.main.width - w) / 2
+    const y = (this.cameras.main.height - h) / 2
+    const panel = this.add.rectangle(x, y, w, h, 0x000000, 0.7).setOrigin(0).setStrokeStyle(2, 0xffffff, 0.5)
+    const title = this.add.text(x + 16, y + 16, 'RESULT', { fontFamily: 'monospace', fontSize: '20px', color: '#e6e9ef' })
+    const scoreText = this.add.text(x + 16, y + 56, `Score: ${this.score}`, { fontFamily: 'monospace', fontSize: '18px', color: '#e6e9ef' })
+    const comment = this.commentForScore(this.score)
+    const commentText = this.add.text(x + 16, y + 88, comment, { fontFamily: 'sans-serif', fontSize: '16px', color: '#ffd166', wordWrap: { width: w - 32 } })
+    const btn = this.add.text(x + w - 120, y + h - 36, '[ Restart ]', { fontFamily: 'monospace', fontSize: '18px', color: '#06d6a0' })
+      .setInteractive({ useHandCursor: true })
+      .on('pointerup', () => {
+        panel.destroy(); title.destroy(); scoreText.destroy(); commentText.destroy(); btn.destroy()
+        this.scene.restart()
+      })
+  }
+
+  commentForScore(s: number) {
+    if (s >= 15000) return '盛り上がっとるぞいね！'
+    if (s >= 8000) return 'やるじぃ、ほんに！'
+    if (s >= 3000) return 'うまいげんて！'
+    return 'また寄ってってまっし〜'
   }
 
   async animateCollapse() {
@@ -190,4 +252,3 @@ export default class MainScene extends Phaser.Scene {
     await new Promise<void>((resolve) => this.time.delayedCall(170, () => resolve()))
   }
 }
-
