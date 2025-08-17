@@ -29,3 +29,16 @@ npm run dev
   - 実画像に差し替え済み: `gyuusuji.png`, `edamame.png`, `potatosalad.png`, `sausage.png`
   - 背景: `/public/images/backgrounds/choikichi.jpg`
   - ママ: `/public/images/characters/mama/mama-left.png` を盤面下に表示
+
+## GitHub Pages への公開
+- このリポジトリは GitHub Actions で gh-pages ブランチに静的書き出しを自動デプロイします。
+- 何もせず `main` に push すれば数分後に公開されます。
+- 公開URL: `https://daiki-miyanaga.github.io/kourinbou-choikichi`（プロジェクトページ）
+
+ローカルで手動エクスポート（任意）
+```bash
+cd web
+set NEXT_PUBLIC_BASE_PATH=/kourinbou-choikichi # mac/linux: export
+npm run build
+npx next export -o out
+```

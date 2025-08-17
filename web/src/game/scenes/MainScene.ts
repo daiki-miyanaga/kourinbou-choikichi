@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser'
+import { asset } from '@/lib/assets'
 import { Board, COLS, ROWS, TYPES, createBoard, findMatches, clearMatches, collapseAndRefill, isAdjacent, swap, collectRuns, scoreForRuns } from '../board'
 
 const TILE = 64
@@ -27,13 +28,13 @@ export default class MainScene extends Phaser.Scene {
 
   preload() {
     // 公開ディレクトリのアイテム画像（実素材）を読み込み
-    this.load.image('item-gyusuji', '/images/items/gyuusuji.png')
-    this.load.image('item-edamame', '/images/items/edamame.png')
-    this.load.image('item-potatosalad', '/images/items/potatosalad.png')
-    this.load.image('item-sausage', '/images/items/sausage.png')
+    this.load.image('item-gyusuji', asset('/images/items/gyuusuji.png'))
+    this.load.image('item-edamame', asset('/images/items/edamame.png'))
+    this.load.image('item-potatosalad', asset('/images/items/potatosalad.png'))
+    this.load.image('item-sausage', asset('/images/items/sausage.png'))
     // 背景とママ
-    this.load.image('bg-choikichi', '/images/backgrounds/choikichi.jpg')
-    this.load.image('mama-left', '/images/characters/mama/mama-left.png')
+    this.load.image('bg-choikichi', asset('/images/backgrounds/choikichi.jpg'))
+    this.load.image('mama-left', asset('/images/characters/mama/mama-left.png'))
   }
 
   keyFor(v: number) {
