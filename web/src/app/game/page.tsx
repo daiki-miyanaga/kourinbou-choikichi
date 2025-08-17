@@ -1,7 +1,5 @@
 "use client"
 import { useEffect, useRef } from 'react'
-import Phaser from 'phaser'
-import MainScene from '@/game/scenes/MainScene'
 
 export default function GamePage() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -9,19 +7,26 @@ export default function GamePage() {
     if (!containerRef.current) return
     const parent = containerRef.current
 
-    const game = new Phaser.Game({
-      type: Phaser.AUTO,
-      parent,
-      width: 420,
-      height: 480,
-      backgroundColor: '#0b0f19',
-      pixelArt: true,
-      scene: [MainScene],
-      scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-    })
+    let game: any
+    ;(async () => {
+      const PhaserMod = await import('phaser')
+      const { default: MainScene } = await import('@/game/scenes/MainScene')
+      const AUTO = (PhaserMod as any).AUTO
+      const Scale = (PhaserMod as any).Scale
+      game = new (PhaserMod as any).Game({
+        type: AUTO,
+        parent,
+        width: 420,
+        height: 480,
+        backgroundColor: '#0b0f19',
+        pixelArt: true,
+        scene: [MainScene],
+        scale: { mode: Scale.FIT, autoCenter: Scale.CENTER_BOTH },
+      })
+    })()
 
     return () => {
-      game.destroy(true)
+      if (game) game.destroy(true)
     }
   }, [])
 
@@ -33,4 +38,3 @@ export default function GamePage() {
     </main>
   )
 }
-
