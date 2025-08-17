@@ -70,17 +70,7 @@ export default class MainScene extends Phaser.Scene {
     this.uiTime = this.add.text(300, 8, 'TIME 60', { fontFamily: 'monospace', fontSize: '18px', color: '#e6e9ef' })
     this.startTimer()
 
-    // ママ画像を盤面下に配置
-    const bottomY = this.originY + ROWS * TILE + 8
-    const mama = this.add.image(this.originX - 8, bottomY, 'mama-left').setOrigin(0, 1).setDepth(5)
-    const src = this.textures.get('mama-left').getSourceImage() as HTMLImageElement
-    if (src && src.height) {
-      const desiredH = 120
-      const ratio = src.width / src.height
-      mama.setDisplaySize(desiredH * ratio, desiredH)
-    } else {
-      mama.setScale(0.25)
-    }
+    // ママ画像はゲーム枠外（React 側）で表示するため、シーン内には配置しない
 
     // BGM 再生（ユーザー操作後に自動解錠）
     const playBgm = () => {
@@ -147,7 +137,14 @@ export default class MainScene extends Phaser.Scene {
 
   pulse(r: number, c: number, on: boolean) {
     const t = this.tiles[r][c]
-    this.tweens.add({ targets: t, scale: on ? 1.05 : 1, duration: 80 })
+    // スケール変化は端末によって見た目が崩れることがあるため、
+    // 選択中はティントでハイライトする
+    if (on) {
+      t.setTint(0xffffaa)
+    } else {
+      t.clearTint()
+      t.setScale(1)
+    }
   }
 
   async trySwap(a: { r: number; c: number }, b: { r: number; c: number }) {
@@ -284,6 +281,8 @@ export default class MainScene extends Phaser.Scene {
           const v = this.board[r][c]
           if (img.v !== v) {
             img.setTexture(this.keyFor(v))
+            // テクスチャ更新後に表示サイズを再適用
+            img.setDisplaySize(TILE - 4, TILE - 4)
             img.v = v
           }
         }

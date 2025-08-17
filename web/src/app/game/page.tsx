@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useRef, useState } from 'react'
+import { asset } from '@/lib/assets'
 
 export default function GamePage() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -53,6 +54,12 @@ export default function GamePage() {
       <h1>Game</h1>
       <p>6×6 マッチ3 のプロトタイプ（タップで隣と入替）</p>
       <div ref={containerRef} style={{ width: 420, height: 480, border: '1px solid #333' }} />
+      {/* ママはゲーム枠外に表示 */}
+      <img
+        src={asset('/images/characters/mama/mama-left.png')}
+        alt="ママ"
+        style={{ display: 'block', marginTop: 8, height: 120 }}
+      />
       {log.length > 0 && (
         <pre style={{ marginTop: 16, background: '#111', color: '#0f0', padding: 12, fontSize: 12, maxWidth: 420, whiteSpace: 'pre-wrap' }}>
           {log.join('\n')}
