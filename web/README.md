@@ -7,6 +7,8 @@
 ```bash
 cd web
 npm install
+# Phaser を使うため依存が追加されています
+npm install phaser
 npm run dev
 ```
 
@@ -17,3 +19,6 @@ npm run dev
 - `npm run lint`: ESLint 実行
 - `npm run type-check`: 型チェック
 
+## ルーティング
+- トップ: `/`（ママの表示デモ）
+- ゲーム: `/game`（6×6 マッチ3 プロトタイプ、タップ/ドラッグで隣と入替）
