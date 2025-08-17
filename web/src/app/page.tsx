@@ -1,9 +1,19 @@
+import Mama from '@/components/Mama'
+
 export default function Home() {
   return (
     <main style={{ padding: 24 }}>
       <h1>Katamachi Choikichi</h1>
       <p>Next.js + TypeScript 雛形</p>
+      <section style={{ marginTop: 24 }}>
+        <h2 style={{ margin: '0 0 8px' }}>ママ（デモ）</h2>
+        <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
+          {/* アニメーション（6fps, 2倍スケール） */}
+          <Mama />
+          {/* 静止フレーム例（3コマ目を表示） */}
+          <Mama frame={2} playing={false} />
+        </div>
+      </section>
     </main>
   )
 }
-
