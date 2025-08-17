@@ -21,6 +21,7 @@ export default class MainScene extends Phaser.Scene {
   uiScore!: Phaser.GameObjects.Text
   uiTime!: Phaser.GameObjects.Text
   ticking?: Phaser.Time.TimerEvent
+  bgm?: Phaser.Sound.BaseSound
 
   constructor() {
     super('MainScene')
@@ -35,6 +36,8 @@ export default class MainScene extends Phaser.Scene {
     // 背景とママ
     this.load.image('bg-choikichi', asset('/images/backgrounds/choikichi.jpg'))
     this.load.image('mama-left', asset('/images/characters/mama/mama-left.png'))
+    // BGM
+    this.load.audio('bgm', [asset('/bgm-se/bgm.mp3')])
   }
 
   keyFor(v: number) {
@@ -77,6 +80,18 @@ export default class MainScene extends Phaser.Scene {
       mama.setDisplaySize(desiredH * ratio, desiredH)
     } else {
       mama.setScale(0.25)
+    }
+
+    // BGM 再生（ユーザー操作後に自動解錠）
+    const playBgm = () => {
+      if (this.bgm) return
+      this.bgm = this.sound.add('bgm', { loop: true, volume: 0.5 })
+      this.bgm.play()
+    }
+    if (this.sound.locked) {
+      this.input.once('pointerdown', playBgm)
+    } else {
+      playBgm()
     }
   }
 
