@@ -25,19 +25,27 @@ export default class MainScene extends Phaser.Scene {
     super('MainScene')
   }
 
-  preload() {}
+  preload() {
+    // 公開ディレクトリのアイテム画像を読み込み
+    this.load.image('item-gyusuji', '/images/items/gyusuji.svg')
+    this.load.image('item-edamame', '/images/items/edamame.svg')
+    this.load.image('item-potatosalad', '/images/items/potatosalad.svg')
+    this.load.image('item-sausage', '/images/items/sausage.svg')
+  }
+
+  keyFor(v: number) {
+    switch (v) {
+      case 1: return 'item-gyusuji'
+      case 2: return 'item-edamame'
+      case 3: return 'item-potatosalad'
+      case 4: return 'item-sausage'
+      default: return 'item-edamame'
+    }
+  }
 
   create() {
     this.cameras.main.setBackgroundColor('#0b0f19')
-    // 原始テクスチャ（色違い）生成
-    const colors = ['#e63946', '#ffd166', '#06d6a0', '#118ab2']
-    colors.forEach((color, i) => {
-      const g = this.add.graphics()
-      g.fillStyle(Phaser.Display.Color.HexStringToColor(color).color, 1)
-      g.fillRect(0, 0, TILE - 4, TILE - 4)
-      g.generateTexture(`tile${i + 1}`, TILE - 4, TILE - 4)
-      g.destroy()
-    })
+    // 画像は preload 済みの item-* を使用
 
     this.board = createBoard(ROWS, COLS, TYPES)
     this.originX = (this.cameras.main.width - W) / 2
@@ -60,7 +68,7 @@ export default class MainScene extends Phaser.Scene {
         const v = this.board[r][c]
         const x = this.originX + c * TILE + TILE / 2
         const y = this.originY + r * TILE + TILE / 2
-        const img = this.add.image(x, y, `tile${v}`) as TileGO
+        const img = this.add.image(x, y, this.keyFor(v)) as TileGO
         img.setDisplaySize(TILE - 4, TILE - 4)
         img.setInteractive({ useHandCursor: true })
         img.r = r; img.c = c; img.v = v
@@ -223,7 +231,7 @@ export default class MainScene extends Phaser.Scene {
     const createAt = (r: number, c: number) => {
       const v = this.board[r][c]
       const { x, y } = this.boardToWorld(r, c)
-      const img = this.add.image(x, y - TILE * ROWS, `tile${v}`) as TileGO
+      const img = this.add.image(x, y - TILE * ROWS, this.keyFor(v)) as TileGO
       img.setDisplaySize(TILE - 4, TILE - 4)
       img.alpha = 0
       img.r = r; img.c = c; img.v = v
@@ -241,7 +249,7 @@ export default class MainScene extends Phaser.Scene {
           // update texture if value changed
           const v = this.board[r][c]
           if (img.v !== v) {
-            img.setTexture(`tile${v}`)
+            img.setTexture(this.keyFor(v))
             img.v = v
           }
         }

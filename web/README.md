@@ -25,3 +25,4 @@ npm run dev
   - 60秒タイマー、スコア計算（基本100/個、4個消し+500）
   - 連鎖ごとにコンボ倍率（×1 → ×1.2 → ×1.5 → ×2 → ×3 → ×5）
   - タイムアップでリザルト＋コメント表示、[Restart] で再開
+  - アイテム画像: `/public/images/items/`（`gyusuji.svg`, `edamame.svg`, `potatosalad.svg`, `sausage.svg`）
