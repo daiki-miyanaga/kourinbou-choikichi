@@ -1,4 +1,5 @@
 import Mama from '@/components/Mama'
+import Link from 'next/link'
 
 export default function Home() {
   return (
@@ -12,6 +13,14 @@ export default function Home() {
           <Mama />
           {/* 静止フレーム例（3コマ目を表示） */}
           <Mama frame={2} playing={false} />
+        </div>
+        <div style={{ marginTop: 24 }}>
+          <Link href="/game" style={{
+            display: 'inline-block', padding: '10px 16px', background: '#06d6a0',
+            color: '#0b0f19', borderRadius: 6, textDecoration: 'none', fontWeight: 700
+          }}>
+            ゲームをプレイする →
+          </Link>
         </div>
       </section>
     </main>
