@@ -197,6 +197,12 @@ export default class MainScene extends Phaser.Scene {
   }
 
   async resolveMatches() {
+    // 選択状態をクリア
+    if (this.selected) {
+      this.pulse(this.selected.r, this.selected.c, false)
+      this.selected = null
+    }
+    
     this.comboLevel = 0
     while (true) {
       const matches = findMatches(this.board)
@@ -286,6 +292,9 @@ export default class MainScene extends Phaser.Scene {
         const img = this.tiles[r][c]
         if (img) {
           this.tweens.killTweensOf(img)
+          // Tweenを停止した後、確実にスケールとティントをリセット
+          img.setScale(1)
+          img.clearTint()
         }
       }
     }
@@ -314,17 +323,11 @@ export default class MainScene extends Phaser.Scene {
           const v = this.board[r][c]
           if (img.v !== v) {
             img.setTexture(this.keyFor(v))
-            // スケールをリセットしてからサイズを再適用
-            img.setScale(1)
             img.setDisplaySize(TILE - 4, TILE - 4)
-            img.clearTint()
             img.v = v
           }
         }
         const { x, y } = this.boardToWorld(r, c)
-        // すべてのタイルのスケールとティントを確実にリセット
-        img.setScale(1)
-        img.clearTint()
         tweens.push(this.tweens.add({ targets: img, x, y, alpha: 1, duration: 160, ease: 'Sine.easeIn' }))
       }
     }
