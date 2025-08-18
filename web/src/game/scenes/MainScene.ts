@@ -279,6 +279,7 @@ export default class MainScene extends Phaser.Scene {
       const { x, y } = this.boardToWorld(r, c)
       const img = this.add.image(x, y - TILE * ROWS, this.keyFor(v)) as TileGO
       img.setDisplaySize(TILE - 4, TILE - 4)
+      img.setInteractive({ useHandCursor: true })
       img.alpha = 0
       img.r = r; img.c = c; img.v = v
       this.tiles[r][c] = img
@@ -296,8 +297,10 @@ export default class MainScene extends Phaser.Scene {
           const v = this.board[r][c]
           if (img.v !== v) {
             img.setTexture(this.keyFor(v))
-            // テクスチャ更新後に表示サイズを再適用
+            // スケールをリセットしてからサイズを再適用
+            img.setScale(1)
             img.setDisplaySize(TILE - 4, TILE - 4)
+            img.clearTint()
             img.v = v
           }
         }
