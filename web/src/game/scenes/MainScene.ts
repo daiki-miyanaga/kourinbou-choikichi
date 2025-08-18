@@ -68,6 +68,15 @@ export default class MainScene extends Phaser.Scene {
     // UI
     this.uiScore = this.add.text(16, 8, 'SCORE 0', { fontFamily: 'monospace', fontSize: '18px', color: '#e6e9ef' })
     this.uiTime = this.add.text(300, 8, 'TIME 60', { fontFamily: 'monospace', fontSize: '18px', color: '#e6e9ef' })
+    
+    // バージョン情報を画面下部に表示
+    const versionInfo = `v${Date.now().toString(36)}`
+    this.add.text(this.cameras.main.width - 8, this.cameras.main.height - 8, versionInfo, { 
+      fontFamily: 'monospace', 
+      fontSize: '10px', 
+      color: '#666666'
+    }).setOrigin(1, 1).setAlpha(0.7)
+    
     this.startTimer()
 
     // ママ画像はゲーム枠外（React 側）で表示するため、シーン内には配置しない
@@ -169,12 +178,18 @@ export default class MainScene extends Phaser.Scene {
     }
   }
 
+  private dispatchMamaEmotion(emotion: 'normal' | 'smile' | 'surprise' | 'sad' | 'happy' | 'gameover') {
+    const event = new CustomEvent('mamaEmotion', { detail: emotion });
+    window.dispatchEvent(event);
+  }
+
   async trySwap(a: { r: number; c: number }, b: { r: number; c: number }) {
     await this.animateSwap(a, b)
     swap(this.board, a.r, a.c, b.r, b.c)
     const matches = findMatches(this.board)
     if (matches.size === 0) {
       // 戻す
+      this.dispatchMamaEmotion('sad');
       await this.animateSwap(a, b)
       swap(this.board, a.r, a.c, b.r, b.c)
       return
@@ -207,6 +222,12 @@ export default class MainScene extends Phaser.Scene {
     while (true) {
       const matches = findMatches(this.board)
       if (matches.size === 0) break
+
+      this.dispatchMamaEmotion('smile');
+      if (this.comboLevel > 0) {
+        this.dispatchMamaEmotion('surprise');
+      }
+
       // スコア計算
       const runs = collectRuns(this.board)
       const base = scoreForRuns(runs)
@@ -259,6 +280,12 @@ export default class MainScene extends Phaser.Scene {
   }
 
   endGame() {
+    this.dispatchMamaEmotion('gameover');
+    // 仕様書のリザルト高得点コメント
+    if (this.score >= 8000) {
+      this.dispatchMamaEmotion('happy');
+    }
+
     this.ticking?.remove(false)
     this.input.off('pointerdown', this.onPointerDown, this)
     this.input.off('pointerup', this.onPointerUp, this)
@@ -282,7 +309,7 @@ export default class MainScene extends Phaser.Scene {
     if (s >= 15000) return '盛り上がっとるぞいね！'
     if (s >= 8000) return 'やるじぃ、ほんに！'
     if (s >= 3000) return 'うまいげんて！'
-    return 'また寄ってってまっし〜'
+    return 'また来まっし〜'
   }
 
   async animateCollapse() {
