@@ -137,6 +137,9 @@ export default class MainScene extends Phaser.Scene {
 
   pulse(r: number, c: number, on: boolean) {
     const t = this.tiles[r][c]
+    // 既存のTweenをキル
+    this.tweens.killTweensOf(t)
+    
     // 選択中はタイルを浮き上がらせる効果
     if (on) {
       this.tweens.add({
@@ -156,7 +159,11 @@ export default class MainScene extends Phaser.Scene {
         scaleX: 1,
         scaleY: 1,
         duration: 150,
-        ease: 'Back.easeIn'
+        ease: 'Back.easeIn',
+        onComplete: () => {
+          // Tweenが完了したら確実にスケールを1にセット
+          t.setScale(1)
+        }
       })
       t.clearTint()
     }
@@ -273,6 +280,16 @@ export default class MainScene extends Phaser.Scene {
   }
 
   async animateCollapse() {
+    // すべてのタイルのTweenを停止し、状態をリセット
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const img = this.tiles[r][c]
+        if (img) {
+          this.tweens.killTweensOf(img)
+        }
+      }
+    }
+    
     // ensure each position has a GO, create missing
     const createAt = (r: number, c: number) => {
       const v = this.board[r][c]
@@ -305,6 +322,9 @@ export default class MainScene extends Phaser.Scene {
           }
         }
         const { x, y } = this.boardToWorld(r, c)
+        // すべてのタイルのスケールとティントを確実にリセット
+        img.setScale(1)
+        img.clearTint()
         tweens.push(this.tweens.add({ targets: img, x, y, alpha: 1, duration: 160, ease: 'Sine.easeIn' }))
       }
     }
