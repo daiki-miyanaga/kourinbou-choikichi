@@ -7,7 +7,7 @@ const PADDING = 8
 const W = COLS * TILE
 const H = ROWS * TILE
 
-type TileGO = Phaser.GameObjects.Image & { r: number; c: number; v: number }
+type TileGO = Phaser.GameObjects.Image & { r: number; c: number; v: number; scale0: number }
 
 export default class MainScene extends Phaser.Scene {
   board!: Board
@@ -103,6 +103,7 @@ export default class MainScene extends Phaser.Scene {
         const y = this.originY + r * TILE + TILE / 2
         const img = this.add.image(x, y, this.keyFor(v)) as TileGO
         img.setDisplaySize(TILE - 4, TILE - 4)
+        img.scale0 = img.scale
         img.setInteractive({ useHandCursor: true })
         img.r = r; img.c = c; img.v = v
         this.tiles[r][c] = img
@@ -146,32 +147,35 @@ export default class MainScene extends Phaser.Scene {
 
   pulse(r: number, c: number, on: boolean) {
     const t = this.tiles[r][c]
-    // 既存のTweenをキル
+    const { y } = this.boardToWorld(r, c)
+
+    // 既存のTweenをキルしてから位置とスケールを初期値に戻す
     this.tweens.killTweensOf(t)
-    
+    t.setY(y)
+    t.setScale(t.scale0)
+
     // 選択中はタイルを浮き上がらせる効果
     if (on) {
       this.tweens.add({
         targets: t,
-        y: t.y - 8,
-        scaleX: 1.1,
-        scaleY: 1.1,
+        y: y - 8,
+        scaleX: t.scale0 * 1.1,
+        scaleY: t.scale0 * 1.1,
         duration: 150,
         ease: 'Back.easeOut'
       })
       t.setTint(0xffffaa)
     } else {
-      const { y } = this.boardToWorld(r, c)
       this.tweens.add({
         targets: t,
-        y: y,
-        scaleX: 1,
-        scaleY: 1,
+        y,
+        scaleX: t.scale0,
+        scaleY: t.scale0,
         duration: 150,
         ease: 'Back.easeIn',
         onComplete: () => {
-          // Tweenが完了したら確実にスケールを1にセット
-          t.setScale(1)
+          // Tweenが完了したら確実にスケールを初期値にセット
+          t.setScale(t.scale0)
         }
       })
       t.clearTint()
