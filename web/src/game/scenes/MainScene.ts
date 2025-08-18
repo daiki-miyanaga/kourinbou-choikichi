@@ -137,11 +137,27 @@ export default class MainScene extends Phaser.Scene {
 
   pulse(r: number, c: number, on: boolean) {
     const t = this.tiles[r][c]
-    // スケール変化は端末によって見た目が崩れることがあるため、
-    // 選択中はティントでハイライトする
+    // 選択中はタイルを浮き上がらせる効果
     if (on) {
+      this.tweens.add({
+        targets: t,
+        y: t.y - 8,
+        scaleX: 1.1,
+        scaleY: 1.1,
+        duration: 150,
+        ease: 'Back.easeOut'
+      })
       t.setTint(0xffffaa)
     } else {
+      const { y } = this.boardToWorld(r, c)
+      this.tweens.add({
+        targets: t,
+        y: y,
+        scaleX: 1,
+        scaleY: 1,
+        duration: 150,
+        ease: 'Back.easeIn'
+      })
       t.clearTint()
     }
   }
