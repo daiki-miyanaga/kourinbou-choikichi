@@ -146,14 +146,17 @@ export default class MainScene extends Phaser.Scene {
 
   pulse(r: number, c: number, on: boolean) {
     const t = this.tiles[r][c]
+    const { y } = this.boardToWorld(r, c)
+    t.setY(y)
+    t.setScale(1)
     // 既存のTweenをキル
     this.tweens.killTweensOf(t)
-    
+
     // 選択中はタイルを浮き上がらせる効果
     if (on) {
       this.tweens.add({
         targets: t,
-        y: t.y - 8,
+        y: y - 8,
         scaleX: 1.1,
         scaleY: 1.1,
         duration: 150,
@@ -161,10 +164,9 @@ export default class MainScene extends Phaser.Scene {
       })
       t.setTint(0xffffaa)
     } else {
-      const { y } = this.boardToWorld(r, c)
       this.tweens.add({
         targets: t,
-        y: y,
+        y,
         scaleX: 1,
         scaleY: 1,
         duration: 150,
