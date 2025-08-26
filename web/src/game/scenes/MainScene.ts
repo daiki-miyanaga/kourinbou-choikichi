@@ -151,12 +151,16 @@ export default class MainScene extends Phaser.Scene {
     const t = this.tiles[r][c]
     if (!t || !t.scene) return // タイルが存在しないか既に破棄されている場合は何もしない
     
+    // 現在の位置とスケールをリセット
+    const { y } = this.boardToWorld(r, c)
+    t.setY(y)
+    t.setScale(1)
+    
     // 既存のTweenをキル
     this.tweens.killTweensOf(t)
     
     // 選択中はタイルを浮き上がらせる効果（スケールは控えめに調整）
     if (on) {
-      const { y } = this.boardToWorld(r, c)
       this.tweens.add({
         targets: t,
         y: y - 6, // 浮き上がり量を減らす
@@ -167,7 +171,6 @@ export default class MainScene extends Phaser.Scene {
       })
       t.setTint(0xffffaa)
     } else {
-      const { y } = this.boardToWorld(r, c)
       this.tweens.add({
         targets: t,
         y: y,

@@ -2,6 +2,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import styles from "./Mama.module.css";
+import { asset } from "@/lib/assets";
 
 // NOTE: 画像素材が不足しているため、既存の画像で代用しています。
 // 仕様書にある表情（笑顔、驚き、困り顔）の画像が追加され次第、差し替える必要があります。
@@ -54,7 +55,7 @@ export default function Mama() {
         <p>{emotionMessages[emotion]}</p>
       </div>
       <Image
-        src={emotionFiles[emotion]}
+        src={asset(emotionFiles[emotion])}
         alt="ママ"
         width={200}
         height={300}
