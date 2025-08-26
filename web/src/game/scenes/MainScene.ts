@@ -104,6 +104,9 @@ export default class MainScene extends Phaser.Scene {
         const img = this.add.image(x, y, this.keyFor(v)) as TileGO
         img.setDisplaySize(TILE - 4, TILE - 4)
         img.setInteractive({ useHandCursor: true })
+        // 画像の透過処理とレンダリング品質を改善
+        img.setAlpha(1)
+        img.setBlendMode(Phaser.BlendModes.NORMAL)
         img.r = r; img.c = c; img.v = v
         this.tiles[r][c] = img
       }
@@ -146,16 +149,19 @@ export default class MainScene extends Phaser.Scene {
 
   pulse(r: number, c: number, on: boolean) {
     const t = this.tiles[r][c]
+    if (!t || !t.scene) return // タイルが存在しないか既に破棄されている場合は何もしない
+    
     // 既存のTweenをキル
     this.tweens.killTweensOf(t)
     
-    // 選択中はタイルを浮き上がらせる効果
+    // 選択中はタイルを浮き上がらせる効果（スケールは控えめに調整）
     if (on) {
+      const { y } = this.boardToWorld(r, c)
       this.tweens.add({
         targets: t,
-        y: t.y - 8,
-        scaleX: 1.1,
-        scaleY: 1.1,
+        y: y - 6, // 浮き上がり量を減らす
+        scaleX: 1.05, // スケールを控えめに
+        scaleY: 1.05,
         duration: 150,
         ease: 'Back.easeOut'
       })
@@ -171,7 +177,9 @@ export default class MainScene extends Phaser.Scene {
         ease: 'Back.easeIn',
         onComplete: () => {
           // Tweenが完了したら確実にスケールを1にセット
-          t.setScale(1)
+          if (t && t.scene) {
+            t.setScale(1)
+          }
         }
       })
       t.clearTint()
@@ -333,7 +341,9 @@ export default class MainScene extends Phaser.Scene {
       const img = this.add.image(x, y - TILE * ROWS, this.keyFor(v)) as TileGO
       img.setDisplaySize(TILE - 4, TILE - 4)
       img.setInteractive({ useHandCursor: true })
-      img.alpha = 0
+      // 画像の透過処理とレンダリング品質を改善
+      img.setAlpha(0)
+      img.setBlendMode(Phaser.BlendModes.NORMAL)
       img.r = r; img.c = c; img.v = v
       this.tiles[r][c] = img
       return img
