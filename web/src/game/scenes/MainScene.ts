@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser'
 import { asset } from '@/lib/assets'
-import { Board, COLS, ROWS, TYPES, createBoard, findMatches, clearMatches, collapseAndRefill, isAdjacent, swap, collectRuns, scoreForRuns } from '../board'
+import { Board, COLS, ROWS, TYPES, BOMB_VALUE, createBoard, findMatches, clearMatches, collapseAndRefill, isAdjacent, swap, collectRuns, scoreForRuns, getBombPositions, createBombs, explodeBomb, isBomb } from '../board'
 
 const TILE = 64
 const PADDING = 8
@@ -33,6 +33,7 @@ export default class MainScene extends Phaser.Scene {
     this.load.image('item-edamame', asset('/images/items/edamame.png'))
     this.load.image('item-potatosalad', asset('/images/items/potatosalad.png'))
     this.load.image('item-sausage', asset('/images/items/sausage.png'))
+    this.load.image('item-bomb', asset('/images/items/bomb.svg'))
     // 背景とママ
     this.load.image('bg-choikichi', asset('/images/backgrounds/choikichi.jpg'))
     this.load.image('mama-left', asset('/images/characters/mama/mama-left.png'))
@@ -46,6 +47,7 @@ export default class MainScene extends Phaser.Scene {
       case 2: return 'item-edamame'
       case 3: return 'item-potatosalad'
       case 4: return 'item-sausage'
+      case BOMB_VALUE: return 'item-bomb'
       default: return 'item-edamame'
     }
   }
@@ -186,6 +188,16 @@ export default class MainScene extends Phaser.Scene {
   }
 
   async trySwap(a: { r: number; c: number }, b: { r: number; c: number }) {
+    // 爆弾がクリックされた場合は即座に爆発
+    if (isBomb(this.board[a.r][a.c])) {
+      await this.explodeBombAt(a.r, a.c)
+      return
+    }
+    if (isBomb(this.board[b.r][b.c])) {
+      await this.explodeBombAt(b.r, b.c)
+      return
+    }
+
     await this.animateSwap(a, b)
     swap(this.board, a.r, a.c, b.r, b.c)
     const matches = findMatches(this.board)
@@ -243,6 +255,9 @@ export default class MainScene extends Phaser.Scene {
       const hasLongRun = runs.some(run => run >= 5)
       if (hasLongRun) {
         this.dispatchMasakiPopup()
+        // 爆弾生成
+        const bombPositions = getBombPositions(this.board, runs)
+        createBombs(this.board, bombPositions)
       }
       // fade out matched
       await new Promise<void>((resolve) => {
@@ -318,6 +333,89 @@ export default class MainScene extends Phaser.Scene {
     if (s >= 8000) return 'やるじぃ、ほんに！'
     if (s >= 3000) return 'うまいげんて！'
     return 'また来まっし〜'
+  }
+
+  async explodeBombAt(bombR: number, bombC: number) {
+    // 爆発エフェクト
+    this.createExplosionEffect(bombR, bombC)
+    
+    // 爆発範囲を取得
+    const exploded = explodeBomb(this.board, bombR, bombC)
+    
+    // スコア加算（爆発したタイル数 × 200点）
+    const bombScore = exploded.size * 200
+    this.score += bombScore
+    if (this.uiScore) this.uiScore.setText(`SCORE ${this.score}`)
+
+    // 爆発したタイルをアニメーション
+    await new Promise<void>((resolve) => {
+      const tgs: Phaser.GameObjects.Image[] = []
+      exploded.forEach((key) => {
+        const [r, c] = key.split(',').map(Number)
+        const go = this.tiles[r][c]
+        if (go) tgs.push(go)
+      })
+      this.tweens.add({ 
+        targets: tgs, 
+        alpha: 0, 
+        scaleX: 1.5,
+        scaleY: 1.5,
+        duration: 300, 
+        ease: 'Back.easeIn',
+        onComplete: () => resolve() 
+      })
+    })
+
+    // 盤面から消去
+    clearMatches(this.board, exploded)
+    exploded.forEach((key) => {
+      const [r, c] = key.split(',').map(Number)
+      const go = this.tiles[r][c]
+      if (go) {
+        go.destroy()
+        ;(this.tiles as any)[r][c] = null
+      }
+    })
+
+    // 重力処理
+    collapseAndRefill(this.board, TYPES)
+    await this.animateCollapse()
+    
+    // 新しいマッチがあるかチェック
+    await this.resolveMatches()
+  }
+
+  createExplosionEffect(r: number, c: number) {
+    const { x, y } = this.boardToWorld(r, c)
+    
+    // 爆発円エフェクト
+    const explosion = this.add.circle(x, y, 0, 0xff6600, 0.8)
+    this.tweens.add({
+      targets: explosion,
+      radius: TILE * 1.5,
+      alpha: 0,
+      duration: 400,
+      ease: 'Quad.easeOut',
+      onComplete: () => explosion.destroy()
+    })
+
+    // 火花エフェクト
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2
+      const spark = this.add.circle(x, y, 3, 0xffaa00)
+      const targetX = x + Math.cos(angle) * 50
+      const targetY = y + Math.sin(angle) * 50
+      
+      this.tweens.add({
+        targets: spark,
+        x: targetX,
+        y: targetY,
+        alpha: 0,
+        duration: 300,
+        ease: 'Quad.easeOut',
+        onComplete: () => spark.destroy()
+      })
+    }
   }
 
   async animateCollapse() {
