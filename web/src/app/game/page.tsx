@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { asset } from '@/lib/assets'
 import Mama from '@/components/Mama'
+import MasakiPopup from '@/components/MasakiPopup'
 
 export default function GamePage() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -97,6 +98,8 @@ export default function GamePage() {
       />
       {/* ママはゲーム枠外に表示 */}
       <Mama />
+      {/* masakiポップアップ */}
+      <MasakiPopup />
       {log.length > 0 && (
         <pre style={{ 
           marginTop: '16px', 

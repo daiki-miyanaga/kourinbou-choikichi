@@ -180,6 +180,11 @@ export default class MainScene extends Phaser.Scene {
     window.dispatchEvent(event);
   }
 
+  private dispatchMasakiPopup() {
+    const event = new CustomEvent('masakiPopup');
+    window.dispatchEvent(event);
+  }
+
   async trySwap(a: { r: number; c: number }, b: { r: number; c: number }) {
     await this.animateSwap(a, b)
     swap(this.board, a.r, a.c, b.r, b.c)
@@ -233,6 +238,12 @@ export default class MainScene extends Phaser.Scene {
       const gained = Math.round(base * mult)
       this.score += gained
       if (this.uiScore) this.uiScore.setText(`SCORE ${this.score}`)
+      
+      // 5個以上消去でmasaki登場
+      const hasLongRun = runs.some(run => run >= 5)
+      if (hasLongRun) {
+        this.dispatchMasakiPopup()
+      }
       // fade out matched
       await new Promise<void>((resolve) => {
         const tgs: Phaser.GameObjects.Image[] = []
