@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="8" fill="#5d4037"/>
+  <path d="M18 26c0-6 8-10 14-10s14 4 14 10v12c0 6-8 10-14 10S18 44 18 38V26z" fill="#c85a3b"/>
+  <circle cx="24" cy="26" r="2" fill="#ffccbc"/>
+  <circle cx="32" cy="22" r="2" fill="#ffccbc"/>
+  <circle cx="40" cy="26" r="2" fill="#ffccbc"/>
+  <title>sausage</title>
+</svg>
+
