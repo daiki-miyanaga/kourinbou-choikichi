@@ -107,6 +107,8 @@ export default class MainScene extends Phaser.Scene {
         // 画像の透過処理とレンダリング品質を改善
         img.setAlpha(1)
         img.setBlendMode(Phaser.BlendModes.NORMAL)
+        // 初期状態で確実にスケール1に設定
+        img.setScale(1)
         img.r = r; img.c = c; img.v = v
         this.tiles[r][c] = img
       }
@@ -151,42 +153,31 @@ export default class MainScene extends Phaser.Scene {
     const t = this.tiles[r][c]
     if (!t || !t.scene) return // タイルが存在しないか既に破棄されている場合は何もしない
     
-    // 現在の位置とスケールをリセット
-    const { y } = this.boardToWorld(r, c)
-    t.setY(y)
-    t.setScale(1)
-    
-    // 既存のTweenをキル
+    // 既存のTweenを完全に停止
     this.tweens.killTweensOf(t)
     
-    // 選択中はタイルを浮き上がらせる効果（スケールは控えめに調整）
+    // 強制的に正常状態にリセット
+    const { x, y } = this.boardToWorld(r, c)
+    t.x = x
+    t.y = y
+    t.scaleX = 1
+    t.scaleY = 1
+    t.clearTint()
+    
+    // 選択エフェクトを適用
     if (on) {
+      // 控えめな選択エフェクト
       this.tweens.add({
         targets: t,
-        y: y - 6, // 浮き上がり量を減らす
-        scaleX: 1.05, // スケールを控えめに
-        scaleY: 1.05,
-        duration: 150,
-        ease: 'Back.easeOut'
+        y: y - 4, // さらに浮き上がり量を減らす
+        scaleX: 1.02, // さらにスケールを控えめに
+        scaleY: 1.02,
+        duration: 100,
+        ease: 'Sine.easeOut'
       })
       t.setTint(0xffffaa)
-    } else {
-      this.tweens.add({
-        targets: t,
-        y: y,
-        scaleX: 1,
-        scaleY: 1,
-        duration: 150,
-        ease: 'Back.easeIn',
-        onComplete: () => {
-          // Tweenが完了したら確実にスケールを1にセット
-          if (t && t.scene) {
-            t.setScale(1)
-          }
-        }
-      })
-      t.clearTint()
     }
+    // off時は既にリセット済みなので何もしない
   }
 
   private dispatchMamaEmotion(emotion: 'normal' | 'smile' | 'surprise' | 'sad' | 'happy' | 'gameover') {
@@ -324,14 +315,18 @@ export default class MainScene extends Phaser.Scene {
   }
 
   async animateCollapse() {
-    // すべてのタイルのTweenを停止し、状態をリセット
+    // すべてのタイルのTweenを停止し、状態を完全にリセット
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const img = this.tiles[r][c]
-        if (img) {
+        if (img && img.scene) {
           this.tweens.killTweensOf(img)
-          // Tweenを停止した後、確実にスケールとティントをリセット
-          img.setScale(1)
+          // 位置とスケールを強制的にリセット
+          const { x, y } = this.boardToWorld(r, c)
+          img.x = x
+          img.y = y
+          img.scaleX = 1
+          img.scaleY = 1
           img.clearTint()
         }
       }
@@ -347,6 +342,8 @@ export default class MainScene extends Phaser.Scene {
       // 画像の透過処理とレンダリング品質を改善
       img.setAlpha(0)
       img.setBlendMode(Phaser.BlendModes.NORMAL)
+      // 初期状態で確実にスケール1に設定
+      img.setScale(1)
       img.r = r; img.c = c; img.v = v
       this.tiles[r][c] = img
       return img
