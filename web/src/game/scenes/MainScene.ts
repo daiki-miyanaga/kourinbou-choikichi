@@ -107,8 +107,6 @@ export default class MainScene extends Phaser.Scene {
         // 画像の透過処理とレンダリング品質を改善
         img.setAlpha(1)
         img.setBlendMode(Phaser.BlendModes.NORMAL)
-        // 初期状態で確実にスケール1に設定
-        img.setScale(1)
         img.r = r; img.c = c; img.v = v
         this.tiles[r][c] = img
       }
@@ -160,18 +158,15 @@ export default class MainScene extends Phaser.Scene {
     const { x, y } = this.boardToWorld(r, c)
     t.x = x
     t.y = y
-    t.scaleX = 1
-    t.scaleY = 1
+    t.setDisplaySize(TILE - 4, TILE - 4) // setScaleの代わりにsetDisplaySizeを使用
     t.clearTint()
     
     // 選択エフェクトを適用
     if (on) {
-      // 控えめな選択エフェクト
+      // 控えめな選択エフェクト（位置のみ変更、サイズは変更しない）
       this.tweens.add({
         targets: t,
-        y: y - 4, // さらに浮き上がり量を減らす
-        scaleX: 1.02, // さらにスケールを控えめに
-        scaleY: 1.02,
+        y: y - 4, // 浮き上がりエフェクトのみ
         duration: 100,
         ease: 'Sine.easeOut'
       })
@@ -321,12 +316,11 @@ export default class MainScene extends Phaser.Scene {
         const img = this.tiles[r][c]
         if (img && img.scene) {
           this.tweens.killTweensOf(img)
-          // 位置とスケールを強制的にリセット
+          // 位置とサイズを強制的にリセット
           const { x, y } = this.boardToWorld(r, c)
           img.x = x
           img.y = y
-          img.scaleX = 1
-          img.scaleY = 1
+          img.setDisplaySize(TILE - 4, TILE - 4) // setScaleの代わりにsetDisplaySizeを使用
           img.clearTint()
         }
       }
@@ -342,8 +336,6 @@ export default class MainScene extends Phaser.Scene {
       // 画像の透過処理とレンダリング品質を改善
       img.setAlpha(0)
       img.setBlendMode(Phaser.BlendModes.NORMAL)
-      // 初期状態で確実にスケール1に設定
-      img.setScale(1)
       img.r = r; img.c = c; img.v = v
       this.tiles[r][c] = img
       return img
