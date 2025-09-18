@@ -6,6 +6,11 @@ const TILE = 64
 const PADDING = 8
 const W = COLS * TILE
 const H = ROWS * TILE
+const FEVER_MAX = 100
+const FEVER_DURATION = 10 // seconds
+const DROP_DURATION_NORMAL = 160
+const DROP_DURATION_FEVER = 100
+const LANDING_BOUNCE_OFFSET = 6
 
 type TileGO = Phaser.GameObjects.Image & { r: number; c: number; v: number }
 
@@ -18,9 +23,16 @@ export default class MainScene extends Phaser.Scene {
   score = 0
   timeLeft = 60
   comboLevel = 0
+  feverGauge = 0
+  feverActive = false
+  feverTimeLeft = 0
   uiScore!: Phaser.GameObjects.Text
   uiTime!: Phaser.GameObjects.Text
+  feverLabel!: Phaser.GameObjects.Text
+  feverGaugeGraphics!: Phaser.GameObjects.Graphics
+  feverOverlay!: Phaser.GameObjects.Rectangle
   ticking?: Phaser.Time.TimerEvent
+  feverTimer?: Phaser.Time.TimerEvent
   bgm?: Phaser.Sound.BaseSound
 
   constructor() {
@@ -59,6 +71,13 @@ export default class MainScene extends Phaser.Scene {
     this.add.image(0, 0, 'bg-choikichi').setOrigin(0, 0).setDisplaySize(cam.width, cam.height).setDepth(-10)
     // 画像は preload 済みの item-* を使用
 
+    this.score = 0
+    this.timeLeft = 60
+    this.comboLevel = 0
+    this.feverGauge = 0
+    this.feverActive = false
+    this.feverTimeLeft = 0
+
     this.board = createBoard(ROWS, COLS, TYPES)
     this.originX = (this.cameras.main.width - W) / 2
     this.originY = PADDING
@@ -70,7 +89,8 @@ export default class MainScene extends Phaser.Scene {
     // UI
     this.uiScore = this.add.text(16, 8, 'SCORE 0', { fontFamily: 'monospace', fontSize: '18px', color: '#e6e9ef' })
     this.uiTime = this.add.text(300, 8, 'TIME 60', { fontFamily: 'monospace', fontSize: '18px', color: '#e6e9ef' })
-    
+    this.createFeverUI()
+
     // バージョン情報を画面下部に表示
     const versionInfo = `v${Date.now().toString(36)}`
     this.add.text(this.cameras.main.width - 8, this.cameras.main.height - 8, versionInfo, { 
@@ -94,6 +114,108 @@ export default class MainScene extends Phaser.Scene {
     } else {
       playBgm()
     }
+  }
+
+  createFeverUI() {
+    const cam = this.cameras.main
+    this.feverOverlay = this.add.rectangle(cam.width / 2, cam.height / 2, cam.width, cam.height, 0xffa552, 0)
+      .setScrollFactor(0)
+      .setDepth(-5)
+
+    this.feverGaugeGraphics = this.add.graphics({ x: 16, y: 40 }).setScrollFactor(0)
+    this.feverLabel = this.add.text(16, 52, '暖簾フィーバー 0%', {
+      fontFamily: 'monospace',
+      fontSize: '16px',
+      color: '#ffd166'
+    }).setScrollFactor(0)
+    this.updateFeverUI()
+  }
+
+  updateFeverUI() {
+    if (!this.feverGaugeGraphics || !this.feverLabel) return
+    const width = 220
+    const height = 14
+    const value = this.feverActive ? (this.feverTimeLeft / FEVER_DURATION) * FEVER_MAX : this.feverGauge
+    const clamped = Phaser.Math.Clamp(value, 0, FEVER_MAX)
+
+    this.feverGaugeGraphics.clear()
+    this.feverGaugeGraphics.fillStyle(0xffffff, 0.15)
+    this.feverGaugeGraphics.fillRoundedRect(0, 0, width, height, 6)
+
+    if (clamped > 0) {
+      const ratio = clamped / FEVER_MAX
+      const fillColor = this.feverActive ? 0xff6f61 : 0xffd166
+      this.feverGaugeGraphics.fillStyle(fillColor, this.feverActive ? 0.9 : 0.8)
+      this.feverGaugeGraphics.fillRoundedRect(2, 2, (width - 4) * ratio, height - 4, 4)
+    }
+
+    if (this.feverActive) {
+      const remain = Math.max(0, this.feverTimeLeft).toFixed(1)
+      this.feverLabel.setText(`暖簾フィーバー 残り${remain}秒`)
+      this.feverLabel.setColor('#ffb3a7')
+    } else {
+      this.feverLabel.setText(`暖簾フィーバー ${Math.round(clamped)}%`)
+      this.feverLabel.setColor('#ffd166')
+    }
+  }
+
+  addFeverEnergy(amount: number) {
+    if (amount <= 0) return
+    if (this.feverActive) {
+      const extraSeconds = Math.min(2, amount / 60)
+      this.extendFever(extraSeconds)
+      return
+    }
+    this.feverGauge = Phaser.Math.Clamp(this.feverGauge + amount, 0, FEVER_MAX)
+    if (this.feverGauge >= FEVER_MAX) {
+      this.activateFever()
+    }
+    this.updateFeverUI()
+  }
+
+  activateFever() {
+    if (this.feverActive) return
+    this.feverActive = true
+    this.feverGauge = FEVER_MAX
+    this.feverTimeLeft = FEVER_DURATION
+    this.updateFeverUI()
+    this.playFeverChime()
+    if (this.feverOverlay) {
+      this.tweens.add({ targets: this.feverOverlay, alpha: 0.35, duration: 250, ease: 'Sine.easeOut' })
+    }
+    this.sound.setRate(1.12)
+    this.feverTimer?.remove()
+    this.feverTimer = this.time.addEvent({
+      delay: 100,
+      loop: true,
+      callback: () => {
+        this.feverTimeLeft = Math.max(0, this.feverTimeLeft - 0.1)
+        if (this.feverTimeLeft <= 0) {
+          this.endFever()
+        } else {
+          this.updateFeverUI()
+        }
+      }
+    })
+  }
+
+  extendFever(extraSeconds: number) {
+    if (!this.feverActive || extraSeconds <= 0) return
+    this.feverTimeLeft = Phaser.Math.Clamp(this.feverTimeLeft + extraSeconds, 0, FEVER_DURATION + 2)
+    this.updateFeverUI()
+  }
+
+  endFever() {
+    if (!this.feverActive) return
+    this.feverActive = false
+    this.feverGauge = 0
+    this.feverTimer?.remove()
+    this.feverTimer = undefined
+    if (this.feverOverlay) {
+      this.tweens.add({ targets: this.feverOverlay, alpha: 0, duration: 250, ease: 'Sine.easeOut' })
+    }
+    this.sound.setRate(1)
+    this.updateFeverUI()
   }
 
   createGrid() {
@@ -187,6 +309,47 @@ export default class MainScene extends Phaser.Scene {
     window.dispatchEvent(event);
   }
 
+  private getAudioContext(): AudioContext | null {
+    const manager = this.sound as Phaser.Sound.WebAudioSoundManager | Phaser.Sound.HTML5AudioSoundManager | Phaser.Sound.NoAudioSoundManager
+    if ('context' in manager) {
+      const context = (manager as Phaser.Sound.WebAudioSoundManager).context
+      if (context) {
+        return context
+      }
+    }
+    return null
+  }
+
+  private playTone(freq: number, duration: number, volume = 0.2) {
+    if (this.sound.locked) return
+    const ctx = this.getAudioContext()
+    if (!ctx) return
+    const now = ctx.currentTime
+    const oscillator = ctx.createOscillator()
+    const gain = ctx.createGain()
+    oscillator.type = 'sine'
+    oscillator.frequency.setValueAtTime(freq, now)
+    gain.gain.setValueAtTime(0.0001, now)
+    gain.gain.linearRampToValueAtTime(volume, now + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration)
+    oscillator.connect(gain)
+    gain.connect(ctx.destination)
+    oscillator.start(now)
+    oscillator.stop(now + duration + 0.05)
+  }
+
+  private playLandingBeat() {
+    if (this.sound.locked) return
+    this.playTone(220, 0.12, 0.18)
+    this.time.delayedCall(90, () => this.playTone(320, 0.08, 0.12))
+  }
+
+  private playFeverChime() {
+    if (this.sound.locked) return
+    this.playTone(660, 0.25, 0.12)
+    this.time.delayedCall(160, () => this.playTone(880, 0.2, 0.1))
+  }
+
   async trySwap(a: { r: number; c: number }, b: { r: number; c: number }) {
     // 爆弾がクリックされた場合は即座に爆発
     if (isBomb(this.board[a.r][a.c])) {
@@ -247,10 +410,11 @@ export default class MainScene extends Phaser.Scene {
       const base = scoreForRuns(runs)
       const multSeq = [1, 1.2, 1.5, 2, 3, 5]
       const mult = multSeq[Math.min(this.comboLevel, multSeq.length - 1)]
-      const gained = Math.round(base * mult)
+      const feverMult = this.feverActive ? 2 : 1
+      const gained = Math.round(base * mult * feverMult)
       this.score += gained
       if (this.uiScore) this.uiScore.setText(`SCORE ${this.score}`)
-      
+
       // 5個以上消去でmasaki登場
       const hasLongRun = runs.some(run => run >= 5)
       if (hasLongRun) {
@@ -259,6 +423,13 @@ export default class MainScene extends Phaser.Scene {
         const bombPositions = getBombPositions(this.board, runs)
         createBombs(this.board, bombPositions)
       }
+
+      const energyFromRuns = runs.reduce((acc, run) => acc + run * 8, 0)
+      const comboBonus = this.comboLevel * 12
+      if (hasLongRun) {
+        this.addFeverEnergy(35)
+      }
+      this.addFeverEnergy(energyFromRuns + comboBonus)
       // fade out matched
       await new Promise<void>((resolve) => {
         const tgs: Phaser.GameObjects.Image[] = []
@@ -309,6 +480,7 @@ export default class MainScene extends Phaser.Scene {
       this.dispatchMamaEmotion('happy');
     }
 
+    this.endFever()
     this.ticking?.remove(false)
     this.input.off('pointerdown', this.onPointerDown, this)
     this.input.off('pointerup', this.onPointerUp, this)
@@ -450,7 +622,7 @@ export default class MainScene extends Phaser.Scene {
       return img
     }
 
-    const tweens: Phaser.Tweens.Tween[] = []
+    const dropDuration = this.feverActive ? DROP_DURATION_FEVER : DROP_DURATION_NORMAL
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         let img = this.tiles[r][c] as TileGO | null
@@ -466,9 +638,26 @@ export default class MainScene extends Phaser.Scene {
           }
         }
         const { x, y } = this.boardToWorld(r, c)
-        tweens.push(this.tweens.add({ targets: img, x, y, alpha: 1, duration: 160, ease: 'Sine.easeIn' }))
+        this.tweens.add({
+          targets: img,
+          x,
+          y,
+          alpha: 1,
+          duration: dropDuration,
+          ease: 'Quad.easeIn',
+          onComplete: () => {
+            this.tweens.add({
+              targets: img,
+              y: y + LANDING_BOUNCE_OFFSET,
+              duration: 90,
+              ease: 'Sine.easeOut',
+              yoyo: true
+            })
+          }
+        })
       }
     }
-    await new Promise<void>((resolve) => this.time.delayedCall(170, () => resolve()))
+    await new Promise<void>((resolve) => this.time.delayedCall(dropDuration + 15, () => resolve()))
+    this.playLandingBeat()
   }
 }
