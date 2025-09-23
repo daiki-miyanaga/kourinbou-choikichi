@@ -55,6 +55,42 @@
   max-height: 200px; /* 高さを制限してパズル画面との重複を防ぐ */
 }
 
+/* アニメーション効果 */
+.balloonPop {
+  animation: balloonPop 0.6s ease-out;
+}
+
+.bounce {
+  animation: bounce 0.6s ease-out;
+}
+
+@keyframes balloonPop {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-10px);
+  }
+  60% {
+    transform: translateY(-5px);
+  }
+}
+
 /* レスポンシブデザイン - スマートフォン対応 */
 @media (max-width: 480px) {
   .mamaContainer {

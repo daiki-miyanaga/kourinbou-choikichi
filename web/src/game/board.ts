@@ -99,11 +99,13 @@ export function collectRuns(b: Board) {
 }
 
 export function scoreForRuns(runs: number[]) {
-  // 基本: 1個=100点、4個ボーナス+500、5個以上は基本点のみ（特別アイテムは未実装）
+  // 改善されたスコアシステム
   let score = 0
   for (const n of runs) {
     score += 100 * n
     if (n === 4) score += 500
+    if (n === 5) score += 1000
+    if (n >= 6) score += 2000 // 6個以上の大連鎖
   }
   return score
 }

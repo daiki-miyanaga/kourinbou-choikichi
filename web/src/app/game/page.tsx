@@ -75,14 +75,17 @@ export default function GamePage() {
         fontSize: 'clamp(1.5rem, 6vw, 2rem)', 
         marginBottom: '0.5rem',
         color: '#f4a261',
-        margin: '0 0 8px 0'
-      }}>ちょい吉パズル</h1>
+        margin: '0 0 8px 0',
+        textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
+        fontWeight: 'bold'
+      }}>🍻 ちょい吉パズル 🍻</h1>
       <p style={{ 
         fontSize: 'clamp(0.8rem, 3vw, 1rem)', 
         marginBottom: '16px',
         color: '#e9c46a',
-        margin: '0 0 16px 0'
-      }}>60秒でおつまみを揃えてね！</p>
+        margin: '0 0 16px 0',
+        textShadow: '1px 1px 2px rgba(0,0,0,0.5)'
+      }}>⏰ 60秒でおつまみを揃えてね！ ⏰</p>
       <div 
         ref={containerRef} 
         style={{ 

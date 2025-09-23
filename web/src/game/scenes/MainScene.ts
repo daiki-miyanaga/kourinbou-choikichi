@@ -31,6 +31,7 @@ export default class MainScene extends Phaser.Scene {
   feverLabel!: Phaser.GameObjects.Text
   feverGaugeGraphics!: Phaser.GameObjects.Graphics
   feverOverlay!: Phaser.GameObjects.Rectangle
+  uiCombo!: Phaser.GameObjects.Text
   ticking?: Phaser.Time.TimerEvent
   feverTimer?: Phaser.Time.TimerEvent
   bgm?: Phaser.Sound.BaseSound
@@ -69,7 +70,9 @@ export default class MainScene extends Phaser.Scene {
     // 背景をカメラ全体にフィット
     const cam = this.cameras.main
     this.add.image(0, 0, 'bg-choikichi').setOrigin(0, 0).setDisplaySize(cam.width, cam.height).setDepth(-10)
-    // 画像は preload 済みの item-* を使用
+    
+    // 背景に暖かみのあるオーバーレイを追加
+    this.add.rectangle(cam.width / 2, cam.height / 2, cam.width, cam.height, 0x2a1810, 0.3).setDepth(-9)
 
     this.score = 0
     this.timeLeft = 60
@@ -80,33 +83,22 @@ export default class MainScene extends Phaser.Scene {
 
     this.board = createBoard(ROWS, COLS, TYPES)
     this.originX = (this.cameras.main.width - W) / 2
-    this.originY = PADDING
+    this.originY = PADDING + 20 // UIスペースを確保
     this.createGrid()
 
     this.input.on('pointerdown', this.onPointerDown, this)
     this.input.on('pointerup', this.onPointerUp, this)
 
-    // UI
-    this.uiScore = this.add.text(16, 8, 'SCORE 0', { fontFamily: 'monospace', fontSize: '18px', color: '#e6e9ef' })
-    this.uiTime = this.add.text(300, 8, 'TIME 60', { fontFamily: 'monospace', fontSize: '18px', color: '#e6e9ef' })
+    // 改善されたUI
+    this.createImprovedUI()
     this.createFeverUI()
-
-    // バージョン情報を画面下部に表示
-    const versionInfo = `v${Date.now().toString(36)}`
-    this.add.text(this.cameras.main.width - 8, this.cameras.main.height - 8, versionInfo, { 
-      fontFamily: 'monospace', 
-      fontSize: '10px', 
-      color: '#666666'
-    }).setOrigin(1, 1).setAlpha(0.7)
     
     this.startTimer()
-
-    // ママ画像はゲーム枠外（React 側）で表示するため、シーン内には配置しない
 
     // BGM 再生（ユーザー操作後に自動解錠）
     const playBgm = () => {
       if (this.bgm) return
-      this.bgm = this.sound.add('bgm', { loop: true, volume: 0.5 })
+      this.bgm = this.sound.add('bgm', { loop: true, volume: 0.4 })
       this.bgm.play()
     }
     if (this.sound.locked) {
@@ -131,30 +123,77 @@ export default class MainScene extends Phaser.Scene {
     this.updateFeverUI()
   }
 
+  createImprovedUI() {
+    const cam = this.cameras.main
+    
+    // スコア表示の改善
+    const scoreBg = this.add.rectangle(16, 8, 140, 32, 0x000000, 0.6).setOrigin(0, 0).setStrokeStyle(1, 0xffd166, 0.8)
+    this.uiScore = this.add.text(24, 16, 'SCORE 0', { 
+      fontFamily: 'Arial', 
+      fontSize: '16px', 
+      color: '#ffd166',
+      fontStyle: 'bold'
+    }).setOrigin(0, 0.5)
+
+    // タイマー表示の改善
+    const timeBg = this.add.rectangle(cam.width - 16, 8, 100, 32, 0x000000, 0.6).setOrigin(1, 0).setStrokeStyle(1, 0xff6b6b, 0.8)
+    this.uiTime = this.add.text(cam.width - 24, 16, 'TIME 60', { 
+      fontFamily: 'Arial', 
+      fontSize: '16px', 
+      color: '#ff6b6b',
+      fontStyle: 'bold'
+    }).setOrigin(1, 0.5)
+
+    // コンボ表示を追加
+    this.uiCombo = this.add.text(cam.width / 2, 16, '', { 
+      fontFamily: 'Arial', 
+      fontSize: '14px', 
+      color: '#4ecdc4',
+      fontStyle: 'bold'
+    }).setOrigin(0.5, 0.5).setAlpha(0)
+
+    // バージョン情報を画面下部に表示
+    const versionInfo = `v${Date.now().toString(36)}`
+    this.add.text(cam.width - 8, cam.height - 8, versionInfo, { 
+      fontFamily: 'monospace', 
+      fontSize: '10px', 
+      color: '#666666'
+    }).setOrigin(1, 1).setAlpha(0.7)
+  }
+
   updateFeverUI() {
     if (!this.feverGaugeGraphics || !this.feverLabel) return
-    const width = 220
-    const height = 14
+    const width = 200
+    const height = 16
     const value = this.feverActive ? (this.feverTimeLeft / FEVER_DURATION) * FEVER_MAX : this.feverGauge
     const clamped = Phaser.Math.Clamp(value, 0, FEVER_MAX)
 
     this.feverGaugeGraphics.clear()
-    this.feverGaugeGraphics.fillStyle(0xffffff, 0.15)
-    this.feverGaugeGraphics.fillRoundedRect(0, 0, width, height, 6)
+    // 背景
+    this.feverGaugeGraphics.fillStyle(0x000000, 0.4)
+    this.feverGaugeGraphics.fillRoundedRect(0, 0, width, height, 8)
+    this.feverGaugeGraphics.lineStyle(2, 0xffd166, 0.8)
+    this.feverGaugeGraphics.strokeRoundedRect(0, 0, width, height, 8)
 
     if (clamped > 0) {
       const ratio = clamped / FEVER_MAX
       const fillColor = this.feverActive ? 0xff6f61 : 0xffd166
       this.feverGaugeGraphics.fillStyle(fillColor, this.feverActive ? 0.9 : 0.8)
-      this.feverGaugeGraphics.fillRoundedRect(2, 2, (width - 4) * ratio, height - 4, 4)
+      this.feverGaugeGraphics.fillRoundedRect(2, 2, (width - 4) * ratio, height - 4, 6)
+      
+      // フィーバー中は光るエフェクト
+      if (this.feverActive) {
+        this.feverGaugeGraphics.fillStyle(0xffffff, 0.3)
+        this.feverGaugeGraphics.fillRoundedRect(2, 2, (width - 4) * ratio, height - 4, 6)
+      }
     }
 
     if (this.feverActive) {
       const remain = Math.max(0, this.feverTimeLeft).toFixed(1)
-      this.feverLabel.setText(`暖簾フィーバー 残り${remain}秒`)
+      this.feverLabel.setText(`🔥 フィーバー 残り${remain}秒`)
       this.feverLabel.setColor('#ffb3a7')
     } else {
-      this.feverLabel.setText(`暖簾フィーバー ${Math.round(clamped)}%`)
+      this.feverLabel.setText(`🍻 フィーバー ${Math.round(clamped)}%`)
       this.feverLabel.setColor('#ffd166')
     }
   }
@@ -320,14 +359,14 @@ export default class MainScene extends Phaser.Scene {
     return null
   }
 
-  private playTone(freq: number, duration: number, volume = 0.2) {
+  private playTone(freq: number, duration: number, volume = 0.2, type: OscillatorType = 'sine') {
     if (this.sound.locked) return
     const ctx = this.getAudioContext()
     if (!ctx) return
     const now = ctx.currentTime
     const oscillator = ctx.createOscillator()
     const gain = ctx.createGain()
-    oscillator.type = 'sine'
+    oscillator.type = type
     oscillator.frequency.setValueAtTime(freq, now)
     gain.gain.setValueAtTime(0.0001, now)
     gain.gain.linearRampToValueAtTime(volume, now + 0.02)
@@ -338,16 +377,32 @@ export default class MainScene extends Phaser.Scene {
     oscillator.stop(now + duration + 0.05)
   }
 
+  private playMatchSound(comboLevel: number) {
+    if (this.sound.locked) return
+    const baseFreq = 440 + (comboLevel * 110)
+    this.playTone(baseFreq, 0.15, 0.15, 'triangle')
+    this.time.delayedCall(80, () => this.playTone(baseFreq * 1.5, 0.1, 0.1, 'triangle'))
+  }
+
   private playLandingBeat() {
     if (this.sound.locked) return
-    this.playTone(220, 0.12, 0.18)
-    this.time.delayedCall(90, () => this.playTone(320, 0.08, 0.12))
+    this.playTone(220, 0.12, 0.15, 'square')
+    this.time.delayedCall(90, () => this.playTone(320, 0.08, 0.1, 'square'))
   }
 
   private playFeverChime() {
     if (this.sound.locked) return
-    this.playTone(660, 0.25, 0.12)
-    this.time.delayedCall(160, () => this.playTone(880, 0.2, 0.1))
+    // より華やかなフィーバー音
+    this.playTone(660, 0.25, 0.12, 'sawtooth')
+    this.time.delayedCall(120, () => this.playTone(880, 0.2, 0.1, 'sawtooth'))
+    this.time.delayedCall(240, () => this.playTone(1100, 0.15, 0.08, 'sawtooth'))
+  }
+
+  private playBombSound() {
+    if (this.sound.locked) return
+    // 爆発音
+    this.playTone(80, 0.3, 0.2, 'sawtooth')
+    this.time.delayedCall(50, () => this.playTone(60, 0.2, 0.15, 'square'))
   }
 
   async trySwap(a: { r: number; c: number }, b: { r: number; c: number }) {
@@ -404,6 +459,9 @@ export default class MainScene extends Phaser.Scene {
       if (this.comboLevel > 0) {
         this.dispatchMamaEmotion('surprise');
       }
+      
+      // マッチ音を再生
+      this.playMatchSound(this.comboLevel)
 
       // スコア計算
       const runs = collectRuns(this.board)
@@ -413,7 +471,10 @@ export default class MainScene extends Phaser.Scene {
       const feverMult = this.feverActive ? 2 : 1
       const gained = Math.round(base * mult * feverMult)
       this.score += gained
-      if (this.uiScore) this.uiScore.setText(`SCORE ${this.score}`)
+      if (this.uiScore) this.uiScore.setText(`SCORE ${this.score.toLocaleString()}`)
+      
+      // コンボ表示の更新
+      this.updateComboDisplay()
 
       // 5個以上消去でmasaki登場
       const hasLongRun = runs.some(run => run >= 5)
@@ -430,6 +491,9 @@ export default class MainScene extends Phaser.Scene {
         this.addFeverEnergy(35)
       }
       this.addFeverEnergy(energyFromRuns + comboBonus)
+      // パーティクルエフェクトを追加
+      this.createMatchParticles(matches)
+      
       // fade out matched
       await new Promise<void>((resolve) => {
         const tgs: Phaser.GameObjects.Image[] = []
@@ -438,7 +502,15 @@ export default class MainScene extends Phaser.Scene {
           const go = this.tiles[r][c]
           tgs.push(go)
         })
-        this.tweens.add({ targets: tgs, alpha: 0, duration: 120, onComplete: () => resolve() })
+        this.tweens.add({ 
+          targets: tgs, 
+          alpha: 0, 
+          scaleX: 1.2,
+          scaleY: 1.2,
+          duration: 200, 
+          ease: 'Back.easeIn',
+          onComplete: () => resolve() 
+        })
       })
       clearMatches(this.board, matches)
       // remove and set placeholders
@@ -508,6 +580,9 @@ export default class MainScene extends Phaser.Scene {
   }
 
   async explodeBombAt(bombR: number, bombC: number) {
+    // 爆発音を再生
+    this.playBombSound()
+    
     // 爆発エフェクト
     this.createExplosionEffect(bombR, bombC)
     
@@ -557,6 +632,69 @@ export default class MainScene extends Phaser.Scene {
     await this.resolveMatches()
   }
 
+  updateComboDisplay() {
+    if (!this.uiCombo) return
+    
+    if (this.comboLevel > 0) {
+      const multSeq = [1, 1.2, 1.5, 2, 3, 5]
+      const mult = multSeq[Math.min(this.comboLevel, multSeq.length - 1)]
+      this.uiCombo.setText(`${this.comboLevel + 1} COMBO! ×${mult}`)
+      this.uiCombo.setAlpha(1)
+      
+      // コンボエフェクト
+      this.tweens.add({
+        targets: this.uiCombo,
+        scaleX: 1.2,
+        scaleY: 1.2,
+        duration: 150,
+        ease: 'Back.easeOut',
+        yoyo: true
+      })
+      
+      // 3秒後にフェードアウト
+      this.time.delayedCall(3000, () => {
+        if (this.uiCombo) {
+          this.tweens.add({
+            targets: this.uiCombo,
+            alpha: 0,
+            duration: 500
+          })
+        }
+      })
+    } else {
+      this.uiCombo.setAlpha(0)
+    }
+  }
+
+  createMatchParticles(matches: Set<string>) {
+    matches.forEach((key) => {
+      const [r, c] = key.split(',').map(Number)
+      const { x, y } = this.boardToWorld(r, c)
+      
+      // キラキラエフェクト
+      for (let i = 0; i < 3; i++) {
+        const particle = this.add.circle(
+          x + (Math.random() - 0.5) * 20,
+          y + (Math.random() - 0.5) * 20,
+          2 + Math.random() * 3,
+          0xffd700,
+          0.8
+        )
+        
+        this.tweens.add({
+          targets: particle,
+          y: y - 30 - Math.random() * 20,
+          alpha: 0,
+          scaleX: 0,
+          scaleY: 0,
+          duration: 800 + Math.random() * 400,
+          ease: 'Quad.easeOut',
+          onComplete: () => particle.destroy()
+        })
+      }
+    })
+  }
+
   createExplosionEffect(r: number, c: number) {
     const { x, y } = this.boardToWorld(r, c)
     
@@ -564,30 +702,36 @@ export default class MainScene extends Phaser.Scene {
     const explosion = this.add.circle(x, y, 0, 0xff6600, 0.8)
     this.tweens.add({
       targets: explosion,
-      radius: TILE * 1.5,
+      radius: TILE * 1.8,
       alpha: 0,
-      duration: 400,
+      duration: 500,
       ease: 'Quad.easeOut',
       onComplete: () => explosion.destroy()
     })
 
     // 火花エフェクト
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * Math.PI * 2
-      const spark = this.add.circle(x, y, 3, 0xffaa00)
-      const targetX = x + Math.cos(angle) * 50
-      const targetY = y + Math.sin(angle) * 50
+    for (let i = 0; i < 12; i++) {
+      const angle = (i / 12) * Math.PI * 2
+      const spark = this.add.circle(x, y, 2 + Math.random() * 2, 0xffaa00)
+      const distance = 40 + Math.random() * 30
+      const targetX = x + Math.cos(angle) * distance
+      const targetY = y + Math.sin(angle) * distance
       
       this.tweens.add({
         targets: spark,
         x: targetX,
         y: targetY,
         alpha: 0,
-        duration: 300,
+        scaleX: 0,
+        scaleY: 0,
+        duration: 400 + Math.random() * 200,
         ease: 'Quad.easeOut',
         onComplete: () => spark.destroy()
       })
     }
+    
+    // 画面シェイク
+    this.cameras.main.shake(200, 0.01)
   }
 
   async animateCollapse() {
