@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser'
 import { asset } from '@/lib/assets'
-import { Board, COLS, ROWS, TYPES, BOMB_VALUE, createBoard, findMatches, clearMatches, collapseAndRefill, isAdjacent, swap, collectRuns, scoreForRuns, getBombPositions, createBombs, explodeBomb, isBomb } from '../board'
+import { Board, COLS, ROWS, TYPES, BOMB_VALUE, createBoard, findMatches, clearMatches, collapseAndRefill, isAdjacent, swap, scoreForRuns, getBombPositions, createBombs, explodeBomb, isBomb, scanRuns, Run } from '../board'
 
 const TILE = 64
 const PADDING = 8
@@ -464,8 +464,9 @@ export default class MainScene extends Phaser.Scene {
       this.playMatchSound(this.comboLevel)
 
       // スコア計算
-      const runs = collectRuns(this.board)
-      const base = scoreForRuns(runs)
+      const runs: Run[] = scanRuns(this.board)
+      const runLengths = runs.map((run) => run.length)
+      const base = scoreForRuns(runLengths)
       const multSeq = [1, 1.2, 1.5, 2, 3, 5]
       const mult = multSeq[Math.min(this.comboLevel, multSeq.length - 1)]
       const feverMult = this.feverActive ? 2 : 1
@@ -477,15 +478,15 @@ export default class MainScene extends Phaser.Scene {
       this.updateComboDisplay()
 
       // 5個以上消去でmasaki登場
-      const hasLongRun = runs.some(run => run >= 5)
+      const hasLongRun = runs.some((run) => run.length >= 5)
       if (hasLongRun) {
         this.dispatchMasakiPopup()
         // 爆弾生成
-        const bombPositions = getBombPositions(this.board, runs)
+        const bombPositions = getBombPositions(runs)
         createBombs(this.board, bombPositions)
       }
 
-      const energyFromRuns = runs.reduce((acc, run) => acc + run * 8, 0)
+      const energyFromRuns = runs.reduce((acc, run) => acc + run.length * 8, 0)
       const comboBonus = this.comboLevel * 12
       if (hasLongRun) {
         this.addFeverEnergy(35)

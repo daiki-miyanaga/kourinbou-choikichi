@@ -8,6 +8,64 @@ export const BOMB_VALUE = 99 // 爆弾アイテムの特殊値
 
 const rand = (n: number) => Math.floor(Math.random() * n)
 
+export type RunOrientation = 'row' | 'column'
+
+export interface Run {
+  orientation: RunOrientation
+  index: number // orientation が row の場合は行index, column の場合は列index
+  start: number // ランの開始位置（列または行）
+  length: number
+  value: Cell
+}
+
+export function scanRuns(b: Board, minLength = 3): Run[] {
+  const runs: Run[] = []
+  const rowCount = b.length
+  if (rowCount === 0) return runs
+  const colCount = b[0].length
+  if (colCount === 0) return runs
+
+  for (let r = 0; r < rowCount; r++) {
+    let c = 0
+    while (c < colCount) {
+      const value = b[r][c]
+      if (value === 0) {
+        c++
+        continue
+      }
+      let length = 1
+      while (c + length < colCount && b[r][c + length] === value) {
+        length++
+      }
+      if (length >= minLength) {
+        runs.push({ orientation: 'row', index: r, start: c, length, value })
+      }
+      c += length
+    }
+  }
+
+  for (let c = 0; c < colCount; c++) {
+    let r = 0
+    while (r < rowCount) {
+      const value = b[r][c]
+      if (value === 0) {
+        r++
+        continue
+      }
+      let length = 1
+      while (r + length < rowCount && b[r + length][c] === value) {
+        length++
+      }
+      if (length >= minLength) {
+        runs.push({ orientation: 'column', index: c, start: r, length, value })
+      }
+      r += length
+    }
+  }
+
+  return runs
+}
+
 export function createBoard(rows = ROWS, cols = COLS, types = TYPES): Board {
   const b: Board = Array.from({ length: rows }, () => Array(cols).fill(0))
   for (let r = 0; r < rows; r++) {
@@ -37,32 +95,11 @@ export function swap(b: Board, r1: number, c1: number, r2: number, c2: number) {
 
 export function findMatches(b: Board) {
   const matches = new Set<string>()
-  // horizontal
-  for (let r = 0; r < b.length; r++) {
-    let run = 1
-    for (let c = 1; c <= b[r].length; c++) {
-      if (c < b[r].length && b[r][c] !== 0 && b[r][c] === b[r][c - 1]) {
-        run++
-      } else {
-        if (run >= 3) {
-          for (let k = 0; k < run; k++) matches.add(`${r},${c - 1 - k}`)
-        }
-        run = 1
-      }
-    }
-  }
-  // vertical
-  for (let c = 0; c < b[0].length; c++) {
-    let run = 1
-    for (let r = 1; r <= b.length; r++) {
-      if (r < b.length && b[r][c] !== 0 && b[r][c] === b[r - 1][c]) {
-        run++
-      } else {
-        if (run >= 3) {
-          for (let k = 0; k < run; k++) matches.add(`${r - 1 - k},${c}`)
-        }
-        run = 1
-      }
+  for (const run of scanRuns(b)) {
+    for (let offset = 0; offset < run.length; offset++) {
+      const r = run.orientation === 'row' ? run.index : run.start + offset
+      const c = run.orientation === 'row' ? run.start + offset : run.index
+      matches.add(`${r},${c}`)
     }
   }
   return matches
@@ -70,32 +107,7 @@ export function findMatches(b: Board) {
 
 // スコア算出用に、横/縦の「連続数」を収集（3以上のみ）
 export function collectRuns(b: Board) {
-  const runs: number[] = []
-  // horizontal runs
-  for (let r = 0; r < b.length; r++) {
-    let run = 1
-    for (let c = 1; c <= b[r].length; c++) {
-      if (c < b[r].length && b[r][c] !== 0 && b[r][c] === b[r][c - 1]) {
-        run++
-      } else {
-        if (run >= 3) runs.push(run)
-        run = 1
-      }
-    }
-  }
-  // vertical runs
-  for (let c = 0; c < b[0].length; c++) {
-    let run = 1
-    for (let r = 1; r <= b.length; r++) {
-      if (r < b.length && b[r][c] !== 0 && b[r][c] === b[r - 1][c]) {
-        run++
-      } else {
-        if (run >= 3) runs.push(run)
-        run = 1
-      }
-    }
-  }
-  return runs
+  return scanRuns(b).map((run) => run.length)
 }
 
 export function scoreForRuns(runs: number[]) {
@@ -140,52 +152,19 @@ export function isAdjacent(r1: number, c1: number, r2: number, c2: number) {
 }
 
 // 5個以上のランから爆弾生成位置を計算
-export function getBombPositions(b: Board, runs: number[]) {
+export function getBombPositions(runs: Run[]) {
   const bombPositions: { r: number; c: number }[] = []
-  
-  // 5個以上のランを検索
-  let runIndex = 0
-  
-  // horizontal runs
-  for (let r = 0; r < b.length; r++) {
-    let run = 1
-    let runStart = 0
-    for (let c = 1; c <= b[r].length; c++) {
-      if (c < b[r].length && b[r][c] !== 0 && b[r][c] === b[r][c - 1]) {
-        run++
-      } else {
-        if (run >= 5 && runIndex < runs.length && runs[runIndex] >= 5) {
-          // 中央位置に爆弾を配置
-          const centerC = Math.floor(runStart + run / 2)
-          bombPositions.push({ r, c: centerC })
-        }
-        if (run >= 3) runIndex++
-        runStart = c
-        run = 1
-      }
+
+  for (const run of runs) {
+    if (run.length < 5) continue
+    const center = Math.floor(run.start + run.length / 2)
+    if (run.orientation === 'row') {
+      bombPositions.push({ r: run.index, c: center })
+    } else {
+      bombPositions.push({ r: center, c: run.index })
     }
   }
-  
-  // vertical runs
-  for (let c = 0; c < b[0].length; c++) {
-    let run = 1
-    let runStart = 0
-    for (let r = 1; r <= b.length; r++) {
-      if (r < b.length && b[r][c] !== 0 && b[r][c] === b[r - 1][c]) {
-        run++
-      } else {
-        if (run >= 5 && runIndex < runs.length && runs[runIndex] >= 5) {
-          // 中央位置に爆弾を配置
-          const centerR = Math.floor(runStart + run / 2)
-          bombPositions.push({ r: centerR, c })
-        }
-        if (run >= 3) runIndex++
-        runStart = r
-        run = 1
-      }
-    }
-  }
-  
+
   return bombPositions
 }
 
