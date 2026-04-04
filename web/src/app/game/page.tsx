@@ -1,13 +1,20 @@
-"use client"
+'use client'
+
+import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
-import { asset } from '@/lib/assets'
 import Mama from '@/components/Mama'
 import MasakiPopup from '@/components/MasakiPopup'
+import styles from './page.module.css'
+
+type InitState = 'loading' | 'ready' | 'error'
 
 export default function GamePage() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [log, setLog] = useState<string[]>([])
+  const [initState, setInitState] = useState<InitState>('loading')
+
   const push = (m: string) => setLog((L) => [...L, m])
+
   useEffect(() => {
     if (!containerRef.current) return
     const parent = containerRef.current
@@ -16,9 +23,12 @@ export default function GamePage() {
     const onError = (e: any) => {
       const msg = e?.reason?.message || e?.message || String(e)
       push(`Error: ${msg}`)
+      setInitState('error')
     }
+
     window.addEventListener('unhandledrejection', onError)
     window.addEventListener('error', onError as any)
+
     ;(async () => {
       try {
         push('loading phaser...')
@@ -38,16 +48,18 @@ export default function GamePage() {
           backgroundColor: '#0b0f19',
           pixelArt: true,
           scene: [MainScene],
-          scale: { 
-            mode: Scale.FIT, 
+          scale: {
+            mode: Scale.FIT,
             autoCenter: Scale.CENTER_BOTH,
             width: 420,
-            height: 480
+            height: 480,
           },
         })
         push('game created')
+        setInitState('ready')
       } catch (err: any) {
         push(`init failed: ${err?.message || String(err)}`)
+        setInitState('error')
       }
     })()
 
@@ -59,65 +71,33 @@ export default function GamePage() {
   }, [])
 
   return (
-    <main style={{ 
-      padding: '8px', 
-      textAlign: 'center',
-      background: 'linear-gradient(to bottom, #1a1a2e, #16213e)',
-      color: '#fff',
-      minHeight: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'flex-start',
-      alignItems: 'center',
-      paddingTop: '20px'
-    }}>
-      <h1 style={{ 
-        fontSize: 'clamp(1.5rem, 6vw, 2rem)', 
-        marginBottom: '0.5rem',
-        color: '#f4a261',
-        margin: '0 0 8px 0',
-        textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
-        fontWeight: 'bold'
-      }}>🍻 ちょい吉パズル 🍻</h1>
-      <p style={{ 
-        fontSize: 'clamp(0.8rem, 3vw, 1rem)', 
-        marginBottom: '16px',
-        color: '#e9c46a',
-        margin: '0 0 16px 0',
-        textShadow: '1px 1px 2px rgba(0,0,0,0.5)'
-      }}>⏰ 60秒でおつまみを揃えてね！ ⏰</p>
-      <div 
-        ref={containerRef} 
-        style={{ 
-          width: 'min(90vw, 420px)', 
-          height: 'min(90vw * 480/420, 480px)', 
-          maxWidth: '420px',
-          maxHeight: '480px',
-          border: '2px solid #e76f51',
-          borderRadius: '8px',
-          boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
-          margin: '0 auto'
-        }} 
-      />
-      {/* ママはゲーム枠外に表示 */}
+    <main className={styles.main}>
+      <h1 className={styles.title}>🍻 ちょい吉パズル 🍻</h1>
+      <p className={styles.description}>⏰ 60秒でおつまみを揃えてね！ ⏰</p>
+
+      <div ref={containerRef} className={styles.gameFrame}>
+        {initState !== 'ready' && (
+          <div className={styles.statusOverlay}>
+            {initState === 'loading'
+              ? 'ゲームを準備中です…\n少しお待ちください。'
+              : '初期化に失敗しました。\n再読み込みをお試しください。'}
+          </div>
+        )}
+      </div>
+
+      <div className={styles.actions}>
+        <button type="button" className={styles.reloadButton} onClick={() => window.location.reload()}>
+          再読み込み
+        </button>
+        <Link href="/" className={styles.linkButton}>
+          タイトルへ戻る
+        </Link>
+      </div>
+
       <Mama />
-      {/* masakiポップアップ */}
       <MasakiPopup />
-      {log.length > 0 && (
-        <pre style={{ 
-          marginTop: '16px', 
-          background: '#111', 
-          color: '#0f0', 
-          padding: '12px', 
-          fontSize: 'clamp(10px, 2.5vw, 12px)', 
-          maxWidth: 'min(90vw, 420px)', 
-          whiteSpace: 'pre-wrap',
-          borderRadius: '4px',
-          overflow: 'auto'
-        }}>
-          {log.join('\n')}
-        </pre>
-      )}
+
+      {initState === 'error' && log.length > 0 && <pre className={styles.debug}>{log.join('\n')}</pre>}
     </main>
   )
 }
