@@ -1,0 +1,25 @@
+version: 1
+name: default-quality-gates
+
+gates:
+  - id: lint
+    command: npm run lint
+    required: true
+    workdir: web
+
+  - id: type-check
+    command: npm run type-check
+    required: true
+    workdir: web
+
+  - id: build
+    command: npm run build
+    required_when:
+      - app_routing_changed
+      - runtime_config_changed
+      - static_assets_changed
+    workdir: web
+
+failure_policy:
+  stop_on_required_gate_failure: true
+  include_failure_summary_in_report: true
