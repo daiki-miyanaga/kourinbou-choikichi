@@ -1,0 +1,28 @@
+version: 1
+name: kourinbou-agent-policy
+
+execution:
+  shell: bash
+  dry_run_for_destructive: true
+  require_plan_before_implementation: true
+
+allowed_commands:
+  - npm run lint
+  - npm run type-check
+  - npm run build
+  - npm run dev
+
+forbidden_paths:
+  - web/.next
+  - web/out
+  - docs/_next
+
+change_policy:
+  minimal_diff: true
+  avoid_unrelated_refactors: true
+  keep_generated_files_out_of_manual_edits: true
+
+reporting:
+  include_commands: true
+  include_results: true
+  include_manual_qa_steps: true

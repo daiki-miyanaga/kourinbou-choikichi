@@ -1,0 +1,34 @@
+version: 1
+profiles:
+  planning-only:
+    steps:
+      - classify_request
+      - define_scope
+      - propose_plan
+      - await_approval
+    run_checks: false
+
+  feature:
+    steps:
+      - classify_request
+      - define_scope
+      - implement_minimal
+      - run_quality_gates
+      - summarize_qa
+    run_checks: true
+
+  bugfix:
+    steps:
+      - reproduce_issue
+      - define_scope
+      - implement_minimal
+      - run_quality_gates
+      - summarize_qa
+    run_checks: true
+
+  investigation:
+    steps:
+      - gather_evidence
+      - validate_hypothesis
+      - report_findings
+    run_checks: false
