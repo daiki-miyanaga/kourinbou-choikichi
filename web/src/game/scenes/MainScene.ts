@@ -27,6 +27,7 @@ export default class MainScene extends Phaser.Scene {
   feverActive = false
   feverTimeLeft = 0
   uiScore!: Phaser.GameObjects.Text
+  uiBest!: Phaser.GameObjects.Text
   uiTime!: Phaser.GameObjects.Text
   feverLabel!: Phaser.GameObjects.Text
   feverGaugeGraphics!: Phaser.GameObjects.Graphics
@@ -35,6 +36,8 @@ export default class MainScene extends Phaser.Scene {
   ticking?: Phaser.Time.TimerEvent
   feverTimer?: Phaser.Time.TimerEvent
   bgm?: Phaser.Sound.BaseSound
+  bestScore = 0
+  timeWarningActive = false
 
   constructor() {
     super('MainScene')
@@ -75,6 +78,7 @@ export default class MainScene extends Phaser.Scene {
     this.add.rectangle(cam.width / 2, cam.height / 2, cam.width, cam.height, 0x2a1810, 0.3).setDepth(-9)
 
     this.score = 0
+    this.timeWarningActive = false
     this.timeLeft = 60
     this.comboLevel = 0
     this.feverGauge = 0
@@ -92,6 +96,8 @@ export default class MainScene extends Phaser.Scene {
     // 改善されたUI
     this.createImprovedUI()
     this.createFeverUI()
+    this.drawBoardFrame()
+    this.loadBestScore()
     
     this.startTimer()
 
@@ -135,6 +141,14 @@ export default class MainScene extends Phaser.Scene {
       fontStyle: 'bold'
     }).setOrigin(0, 0.5)
 
+    this.add.rectangle(164, 8, 130, 32, 0x000000, 0.55).setOrigin(0, 0).setStrokeStyle(1, 0x8ecae6, 0.8)
+    this.uiBest = this.add.text(172, 16, 'BEST 0', {
+      fontFamily: 'Arial',
+      fontSize: '16px',
+      color: '#8ecae6',
+      fontStyle: 'bold'
+    }).setOrigin(0, 0.5)
+
     // タイマー表示の改善
     const timeBg = this.add.rectangle(cam.width - 16, 8, 100, 32, 0x000000, 0.6).setOrigin(1, 0).setStrokeStyle(1, 0xff6b6b, 0.8)
     this.uiTime = this.add.text(cam.width - 24, 16, 'TIME 60', { 
@@ -159,6 +173,63 @@ export default class MainScene extends Phaser.Scene {
       fontSize: '10px', 
       color: '#666666'
     }).setOrigin(1, 1).setAlpha(0.7)
+  }
+
+  drawBoardFrame() {
+    const frame = this.add.graphics()
+    const boardX = this.originX - 6
+    const boardY = this.originY - 6
+    frame.fillStyle(0x000000, 0.35)
+    frame.fillRoundedRect(boardX, boardY, W + 12, H + 12, 14)
+    frame.lineStyle(3, 0xffd166, 0.7)
+    frame.strokeRoundedRect(boardX, boardY, W + 12, H + 12, 14)
+
+    const innerGlow = this.add.graphics()
+    innerGlow.lineStyle(2, 0xffffff, 0.2)
+    innerGlow.strokeRoundedRect(boardX + 2, boardY + 2, W + 8, H + 8, 12)
+  }
+
+  loadBestScore() {
+    try {
+      const raw = localStorage.getItem('choikichi-best-score')
+      this.bestScore = raw ? Math.max(0, Number(raw)) : 0
+      if (this.uiBest) this.uiBest.setText(`BEST ${Math.round(this.bestScore).toLocaleString()}`)
+    } catch {
+      this.bestScore = 0
+    }
+  }
+
+  saveBestScore() {
+    if (this.score <= this.bestScore) return
+    this.bestScore = this.score
+    if (this.uiBest) this.uiBest.setText(`BEST ${this.bestScore.toLocaleString()}`)
+    try {
+      localStorage.setItem('choikichi-best-score', String(this.bestScore))
+    } catch {
+      // noop
+    }
+  }
+
+  showFloatingText(x: number, y: number, text: string, color = '#ffd166') {
+    const label = this.add.text(x, y, text, {
+      fontFamily: 'Arial',
+      fontSize: '20px',
+      fontStyle: 'bold',
+      color,
+      stroke: '#000000',
+      strokeThickness: 4
+    }).setOrigin(0.5)
+
+    this.tweens.add({
+      targets: label,
+      y: y - 36,
+      alpha: 0,
+      scaleX: 1.15,
+      scaleY: 1.15,
+      duration: 700,
+      ease: 'Cubic.easeOut',
+      onComplete: () => label.destroy()
+    })
   }
 
   updateFeverUI() {
@@ -473,6 +544,8 @@ export default class MainScene extends Phaser.Scene {
       const gained = Math.round(base * mult * feverMult)
       this.score += gained
       if (this.uiScore) this.uiScore.setText(`SCORE ${this.score.toLocaleString()}`)
+      const center = this.centerOfMatches(matches)
+      this.showFloatingText(center.x, center.y, `+${gained.toLocaleString()}`, this.feverActive ? '#ffb3a7' : '#ffd166')
       
       // コンボ表示の更新
       this.updateComboDisplay()
@@ -481,6 +554,7 @@ export default class MainScene extends Phaser.Scene {
       const hasLongRun = runs.some((run) => run.length >= 5)
       if (hasLongRun) {
         this.dispatchMasakiPopup()
+        this.showFloatingText(center.x, center.y - 24, 'BONUS!', '#4ecdc4')
         // 爆弾生成
         const bombPositions = getBombPositions(runs)
         createBombs(this.board, bombPositions)
@@ -540,10 +614,28 @@ export default class MainScene extends Phaser.Scene {
     this.ticking = this.time.addEvent({ delay: 1000, loop: true, callback: () => {
       this.timeLeft--
       if (this.uiTime) this.uiTime.setText(`TIME ${Math.max(0, this.timeLeft)}`)
+      if (this.timeLeft <= 10 && this.timeLeft > 0) {
+        this.enableTimeWarning()
+      }
       if (this.timeLeft <= 0) {
         this.endGame()
       }
     } })
+  }
+
+  enableTimeWarning() {
+    if (this.timeWarningActive || !this.uiTime) return
+    this.timeWarningActive = true
+    this.uiTime.setColor('#ff2e63')
+    this.tweens.add({
+      targets: this.uiTime,
+      scaleX: 1.15,
+      scaleY: 1.15,
+      duration: 320,
+      yoyo: true,
+      repeat: -1
+    })
+    this.cameras.main.flash(220, 255, 50, 90, false)
   }
 
   endGame() {
@@ -554,6 +646,7 @@ export default class MainScene extends Phaser.Scene {
     }
 
     this.endFever()
+    this.saveBestScore()
     this.ticking?.remove(false)
     this.input.off('pointerdown', this.onPointerDown, this)
     this.input.off('pointerup', this.onPointerUp, this)
@@ -565,10 +658,11 @@ export default class MainScene extends Phaser.Scene {
     const scoreText = this.add.text(x + 16, y + 56, `Score: ${this.score}`, { fontFamily: 'monospace', fontSize: '18px', color: '#e6e9ef' })
     const comment = this.commentForScore(this.score)
     const commentText = this.add.text(x + 16, y + 88, comment, { fontFamily: 'sans-serif', fontSize: '16px', color: '#ffd166', wordWrap: { width: w - 32 } })
+    const bestText = this.add.text(x + 16, y + 132, `Best: ${this.bestScore.toLocaleString()}`, { fontFamily: 'monospace', fontSize: '15px', color: '#8ecae6' })
     const btn = this.add.text(x + w - 120, y + h - 36, '[ Restart ]', { fontFamily: 'monospace', fontSize: '18px', color: '#06d6a0' })
       .setInteractive({ useHandCursor: true })
       .on('pointerup', () => {
-        panel.destroy(); title.destroy(); scoreText.destroy(); commentText.destroy(); btn.destroy()
+        panel.destroy(); title.destroy(); scoreText.destroy(); commentText.destroy(); bestText.destroy(); btn.destroy()
         this.scene.restart()
       })
   }
@@ -594,6 +688,8 @@ export default class MainScene extends Phaser.Scene {
     const bombScore = exploded.size * 200
     this.score += bombScore
     if (this.uiScore) this.uiScore.setText(`SCORE ${this.score}`)
+    const center = this.centerOfMatches(exploded)
+    this.showFloatingText(center.x, center.y, `💥 +${bombScore}`, '#ff7b54')
 
     // 爆発したタイルをアニメーション
     await new Promise<void>((resolve) => {
@@ -733,6 +829,21 @@ export default class MainScene extends Phaser.Scene {
     
     // 画面シェイク
     this.cameras.main.shake(200, 0.01)
+  }
+
+  centerOfMatches(matches: Set<string>) {
+    let sx = 0
+    let sy = 0
+    let n = 0
+    matches.forEach((key) => {
+      const [r, c] = key.split(',').map(Number)
+      const pos = this.boardToWorld(r, c)
+      sx += pos.x
+      sy += pos.y
+      n += 1
+    })
+    if (n === 0) return { x: this.cameras.main.centerX, y: this.cameras.main.centerY }
+    return { x: sx / n, y: sy / n }
   }
 
   async animateCollapse() {
