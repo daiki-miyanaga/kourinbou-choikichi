@@ -19,15 +19,15 @@ export default function GamePage() {
     if (!containerRef.current) return
     const parent = containerRef.current
 
-    let game: any
-    const onError = (e: any) => {
-      const msg = e?.reason?.message || e?.message || String(e)
+    let game: import('phaser').Game | undefined
+    const onError = (e: ErrorEvent | PromiseRejectionEvent) => {
+      const msg = 'reason' in e ? String(e.reason?.message ?? e.reason) : e.message
       push(`Error: ${msg}`)
       setInitState('error')
     }
 
     window.addEventListener('unhandledrejection', onError)
-    window.addEventListener('error', onError as any)
+    window.addEventListener('error', onError)
 
     ;(async () => {
       try {
@@ -35,13 +35,11 @@ export default function GamePage() {
         const PhaserMod = await import('phaser')
         push('loading scene...')
         const { default: MainScene } = await import('@/game/scenes/MainScene')
-        const AUTO = (PhaserMod as any).AUTO
-        const Scale = (PhaserMod as any).Scale
         push('creating game...')
         const containerWidth = parent.clientWidth
         const containerHeight = parent.clientHeight
-        game = new (PhaserMod as any).Game({
-          type: AUTO,
+        game = new PhaserMod.Game({
+          type: PhaserMod.AUTO,
           parent,
           width: Math.min(containerWidth, 420),
           height: Math.min(containerHeight, 480),
@@ -49,23 +47,23 @@ export default function GamePage() {
           pixelArt: true,
           scene: [MainScene],
           scale: {
-            mode: Scale.FIT,
-            autoCenter: Scale.CENTER_BOTH,
+            mode: PhaserMod.Scale.FIT,
+            autoCenter: PhaserMod.Scale.CENTER_BOTH,
             width: 420,
             height: 480,
           },
         })
         push('game created')
         setInitState('ready')
-      } catch (err: any) {
-        push(`init failed: ${err?.message || String(err)}`)
+      } catch (err) {
+        push(`init failed: ${err instanceof Error ? err.message : String(err)}`)
         setInitState('error')
       }
     })()
 
     return () => {
       window.removeEventListener('unhandledrejection', onError)
-      window.removeEventListener('error', onError as any)
+      window.removeEventListener('error', onError)
       if (game) game.destroy(true)
     }
   }, [])
@@ -73,7 +71,7 @@ export default function GamePage() {
   return (
     <main className={styles.main}>
       <h1 className={styles.title}>🍻 ちょい吉パズル 🍻</h1>
-      <p className={styles.description}>⏰ 60秒でおつまみを揃えてね！ ⏰</p>
+      <p className={styles.description}>スワイプでおつまみを入れ替えて、60秒で高得点を狙おう！</p>
 
       <div ref={containerRef} className={styles.gameFrame}>
         {initState !== 'ready' && (

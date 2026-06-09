@@ -1,27 +1,43 @@
 import * as Phaser from 'phaser'
 import { asset } from '@/lib/assets'
-import { Board, COLS, ROWS, TYPES, BOMB_VALUE, createBoard, findMatches, clearMatches, collapseAndRefill, isAdjacent, swap, scoreForRuns, getBombPositions, createBombs, explodeBomb, isBomb, scanRuns, Run } from '../board'
+import {
+  Board, COLS, ROWS, TYPES, BOMB_VALUE, createBoard, findMatches, clearMatches,
+  collapseAndRefill, isAdjacent, inBounds, swap, scoreForRuns, getBombPositions,
+  createBombs, explodeBomb, isBomb, scanRuns, Run, findHintMove, hasValidMove, shuffleBoard,
+} from '../board'
 
 const TILE = 64
-const PADDING = 8
 const W = COLS * TILE
 const H = ROWS * TILE
+const BOARD_TOP = 68
 const FEVER_MAX = 100
 const FEVER_DURATION = 10 // seconds
+const GAME_SECONDS = 60
 const DROP_DURATION_NORMAL = 160
 const DROP_DURATION_FEVER = 100
 const LANDING_BOUNCE_OFFSET = 6
+const HINT_DELAY = 5000
+const SWIPE_THRESHOLD = 18
+const COMBO_MULT = [1, 1.2, 1.5, 2, 3, 5]
 
 type TileGO = Phaser.GameObjects.Image & { r: number; c: number; v: number }
+type CellRef = { r: number; c: number }
+type MamaEmotion = 'normal' | 'smile' | 'surprise' | 'sad' | 'happy' | 'gameover' | 'fever'
 
 export default class MainScene extends Phaser.Scene {
   board!: Board
   tiles: TileGO[][] = []
   originX = 0
-  originY = 0
-  selected: { r: number; c: number } | null = null
+  originY = BOARD_TOP
+  selected: CellRef | null = null
+  selectionFrame!: Phaser.GameObjects.Graphics
+  dragStart: { x: number; y: number; cell: CellRef } | null = null
+  busy = false
+  started = false
+  gameOver = false
+  endRequested = false
   score = 0
-  timeLeft = 60
+  timeLeft = GAME_SECONDS
   comboLevel = 0
   feverGauge = 0
   feverActive = false
@@ -32,9 +48,11 @@ export default class MainScene extends Phaser.Scene {
   feverLabel!: Phaser.GameObjects.Text
   feverGaugeGraphics!: Phaser.GameObjects.Graphics
   feverOverlay!: Phaser.GameObjects.Rectangle
-  uiCombo!: Phaser.GameObjects.Text
   ticking?: Phaser.Time.TimerEvent
   feverTimer?: Phaser.Time.TimerEvent
+  hintTimer?: Phaser.Time.TimerEvent
+  hintTween?: Phaser.Tweens.Tween
+  hintTargets: TileGO[] = []
   bgm?: Phaser.Sound.BaseSound
   bestScore = 0
   timeWarningActive = false
@@ -44,16 +62,12 @@ export default class MainScene extends Phaser.Scene {
   }
 
   preload() {
-    // 公開ディレクトリのアイテム画像（実素材）を読み込み
     this.load.image('item-gyusuji', asset('/images/items/gyuusuji.png'))
     this.load.image('item-edamame', asset('/images/items/edamame.png'))
     this.load.image('item-potatosalad', asset('/images/items/potatosalad.png'))
     this.load.image('item-sausage', asset('/images/items/sausage.png'))
     this.load.image('item-bomb', asset('/images/items/bomb.svg'))
-    // 背景とママ
     this.load.image('bg-choikichi', asset('/images/backgrounds/choikichi.jpg'))
-    this.load.image('mama-left', asset('/images/characters/mama/mama-left.png'))
-    // BGM
     this.load.audio('bgm', [asset('/bgm-se/bgm.mp3')])
   }
 
@@ -69,37 +83,44 @@ export default class MainScene extends Phaser.Scene {
   }
 
   create() {
-    this.cameras.main.setBackgroundColor('#0b0f19')
-    // 背景をカメラ全体にフィット
     const cam = this.cameras.main
+    this.cameras.main.setBackgroundColor('#0b0f19')
     this.add.image(0, 0, 'bg-choikichi').setOrigin(0, 0).setDisplaySize(cam.width, cam.height).setDepth(-10)
-    
-    // 背景に暖かみのあるオーバーレイを追加
     this.add.rectangle(cam.width / 2, cam.height / 2, cam.width, cam.height, 0x2a1810, 0.3).setDepth(-9)
 
+    // 状態リセット（restart 対応）
     this.score = 0
-    this.timeWarningActive = false
-    this.timeLeft = 60
+    this.timeLeft = GAME_SECONDS
     this.comboLevel = 0
     this.feverGauge = 0
     this.feverActive = false
     this.feverTimeLeft = 0
+    this.busy = false
+    this.started = false
+    this.gameOver = false
+    this.endRequested = false
+    this.selected = null
+    this.dragStart = null
+    this.timeWarningActive = false
+    this.hintTargets = []
 
     this.board = createBoard(ROWS, COLS, TYPES)
-    this.originX = (this.cameras.main.width - W) / 2
-    this.originY = PADDING + 20 // UIスペースを確保
+    if (!hasValidMove(this.board)) shuffleBoard(this.board, TYPES)
+    this.originX = (cam.width - W) / 2
+    this.originY = BOARD_TOP
+
+    this.drawBoardFrame()
     this.createGrid()
+    this.selectionFrame = this.add.graphics().setDepth(5)
 
     this.input.on('pointerdown', this.onPointerDown, this)
+    this.input.on('pointermove', this.onPointerMove, this)
     this.input.on('pointerup', this.onPointerUp, this)
 
-    // 改善されたUI
-    this.createImprovedUI()
+    this.createHud()
     this.createFeverUI()
-    this.drawBoardFrame()
     this.loadBestScore()
-    
-    this.startTimer()
+    this.dispatchMamaEmotion('normal')
 
     // BGM 再生（ユーザー操作後に自動解錠）
     const playBgm = () => {
@@ -112,6 +133,37 @@ export default class MainScene extends Phaser.Scene {
     } else {
       playBgm()
     }
+
+    this.startCountdown()
+  }
+
+  // ───────────────────────── HUD ─────────────────────────
+
+  createHud() {
+    const cam = this.cameras.main
+
+    this.add.rectangle(8, 6, 168, 34, 0x000000, 0.6).setOrigin(0, 0).setStrokeStyle(1, 0xffd166, 0.8)
+    this.uiScore = this.add.text(18, 23, 'SCORE 0', {
+      fontFamily: 'Arial',
+      fontSize: '17px',
+      color: '#ffd166',
+      fontStyle: 'bold',
+    }).setOrigin(0, 0.5)
+
+    this.add.rectangle(cam.width - 8, 6, 110, 34, 0x000000, 0.6).setOrigin(1, 0).setStrokeStyle(1, 0xff6b6b, 0.8)
+    this.uiTime = this.add.text(cam.width - 18, 23, `⏰ ${GAME_SECONDS}`, {
+      fontFamily: 'Arial',
+      fontSize: '18px',
+      color: '#ff6b6b',
+      fontStyle: 'bold',
+    }).setOrigin(1, 0.5)
+
+    this.uiBest = this.add.text(cam.width - 10, 52, 'BEST 0', {
+      fontFamily: 'Arial',
+      fontSize: '13px',
+      color: '#8ecae6',
+      fontStyle: 'bold',
+    }).setOrigin(1, 0.5)
   }
 
   createFeverUI() {
@@ -120,59 +172,45 @@ export default class MainScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(-5)
 
-    this.feverGaugeGraphics = this.add.graphics({ x: 16, y: 40 }).setScrollFactor(0)
-    this.feverLabel = this.add.text(16, 52, '暖簾フィーバー 0%', {
-      fontFamily: 'monospace',
-      fontSize: '16px',
-      color: '#ffd166'
-    }).setScrollFactor(0)
+    this.feverGaugeGraphics = this.add.graphics({ x: 8, y: 44 }).setScrollFactor(0)
+    this.feverLabel = this.add.text(8 + 110, 52, '', {
+      fontFamily: 'Arial',
+      fontSize: '11px',
+      color: '#fff8e7',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(1)
     this.updateFeverUI()
   }
 
-  createImprovedUI() {
-    const cam = this.cameras.main
-    
-    // スコア表示の改善
-    const scoreBg = this.add.rectangle(16, 8, 140, 32, 0x000000, 0.6).setOrigin(0, 0).setStrokeStyle(1, 0xffd166, 0.8)
-    this.uiScore = this.add.text(24, 16, 'SCORE 0', { 
-      fontFamily: 'Arial', 
-      fontSize: '16px', 
-      color: '#ffd166',
-      fontStyle: 'bold'
-    }).setOrigin(0, 0.5)
+  updateFeverUI() {
+    if (!this.feverGaugeGraphics || !this.feverLabel) return
+    const width = 220
+    const height = 16
+    const value = this.feverActive ? (this.feverTimeLeft / FEVER_DURATION) * FEVER_MAX : this.feverGauge
+    const clamped = Phaser.Math.Clamp(value, 0, FEVER_MAX)
 
-    this.add.rectangle(164, 8, 130, 32, 0x000000, 0.55).setOrigin(0, 0).setStrokeStyle(1, 0x8ecae6, 0.8)
-    this.uiBest = this.add.text(172, 16, 'BEST 0', {
-      fontFamily: 'Arial',
-      fontSize: '16px',
-      color: '#8ecae6',
-      fontStyle: 'bold'
-    }).setOrigin(0, 0.5)
+    this.feverGaugeGraphics.clear()
+    this.feverGaugeGraphics.fillStyle(0x000000, 0.45)
+    this.feverGaugeGraphics.fillRoundedRect(0, 0, width, height, 8)
+    this.feverGaugeGraphics.lineStyle(2, 0xffd166, 0.8)
+    this.feverGaugeGraphics.strokeRoundedRect(0, 0, width, height, 8)
 
-    // タイマー表示の改善
-    const timeBg = this.add.rectangle(cam.width - 16, 8, 100, 32, 0x000000, 0.6).setOrigin(1, 0).setStrokeStyle(1, 0xff6b6b, 0.8)
-    this.uiTime = this.add.text(cam.width - 24, 16, 'TIME 60', { 
-      fontFamily: 'Arial', 
-      fontSize: '16px', 
-      color: '#ff6b6b',
-      fontStyle: 'bold'
-    }).setOrigin(1, 0.5)
+    if (clamped > 0) {
+      const ratio = clamped / FEVER_MAX
+      const fillColor = this.feverActive ? 0xff6f61 : 0xffd166
+      this.feverGaugeGraphics.fillStyle(fillColor, this.feverActive ? 0.95 : 0.85)
+      this.feverGaugeGraphics.fillRoundedRect(2, 2, (width - 4) * ratio, height - 4, 6)
+      if (this.feverActive) {
+        this.feverGaugeGraphics.fillStyle(0xffffff, 0.3)
+        this.feverGaugeGraphics.fillRoundedRect(2, 2, (width - 4) * ratio, height - 4, 6)
+      }
+    }
 
-    // コンボ表示を追加
-    this.uiCombo = this.add.text(cam.width / 2, 16, '', { 
-      fontFamily: 'Arial', 
-      fontSize: '14px', 
-      color: '#4ecdc4',
-      fontStyle: 'bold'
-    }).setOrigin(0.5, 0.5).setAlpha(0)
-
-    // バージョン情報を画面下部に表示
-    const versionInfo = `v${Date.now().toString(36)}`
-    this.add.text(cam.width - 8, cam.height - 8, versionInfo, { 
-      fontFamily: 'monospace', 
-      fontSize: '10px', 
-      color: '#666666'
-    }).setOrigin(1, 1).setAlpha(0.7)
+    if (this.feverActive) {
+      this.feverLabel.setText(`🔥 フィーバー 残り${Math.max(0, this.feverTimeLeft).toFixed(1)}秒`)
+    } else {
+      this.feverLabel.setText(`🍻 フィーバー ${Math.round(clamped)}%`)
+    }
   }
 
   drawBoardFrame() {
@@ -193,10 +231,10 @@ export default class MainScene extends Phaser.Scene {
     try {
       const raw = localStorage.getItem('choikichi-best-score')
       this.bestScore = raw ? Math.max(0, Number(raw)) : 0
-      if (this.uiBest) this.uiBest.setText(`BEST ${Math.round(this.bestScore).toLocaleString()}`)
     } catch {
       this.bestScore = 0
     }
+    if (this.uiBest) this.uiBest.setText(`BEST ${Math.round(this.bestScore).toLocaleString()}`)
   }
 
   saveBestScore() {
@@ -210,222 +248,269 @@ export default class MainScene extends Phaser.Scene {
     }
   }
 
-  showFloatingText(x: number, y: number, text: string, color = '#ffd166') {
-    const label = this.add.text(x, y, text, {
+  // ───────────────────────── 開始演出 ─────────────────────────
+
+  startCountdown() {
+    const cam = this.cameras.main
+    const overlay = this.add.rectangle(cam.width / 2, cam.height / 2, cam.width, cam.height, 0x000000, 0.45).setDepth(50)
+    const label = this.add.text(cam.width / 2, BOARD_TOP + H / 2, '', {
       fontFamily: 'Arial',
-      fontSize: '20px',
+      fontSize: '72px',
+      color: '#ffd166',
       fontStyle: 'bold',
-      color,
       stroke: '#000000',
-      strokeThickness: 4
-    }).setOrigin(0.5)
+      strokeThickness: 8,
+    }).setOrigin(0.5).setDepth(51)
 
-    this.tweens.add({
-      targets: label,
-      y: y - 36,
-      alpha: 0,
-      scaleX: 1.15,
-      scaleY: 1.15,
-      duration: 700,
-      ease: 'Cubic.easeOut',
-      onComplete: () => label.destroy()
-    })
-  }
-
-  updateFeverUI() {
-    if (!this.feverGaugeGraphics || !this.feverLabel) return
-    const width = 200
-    const height = 16
-    const value = this.feverActive ? (this.feverTimeLeft / FEVER_DURATION) * FEVER_MAX : this.feverGauge
-    const clamped = Phaser.Math.Clamp(value, 0, FEVER_MAX)
-
-    this.feverGaugeGraphics.clear()
-    // 背景
-    this.feverGaugeGraphics.fillStyle(0x000000, 0.4)
-    this.feverGaugeGraphics.fillRoundedRect(0, 0, width, height, 8)
-    this.feverGaugeGraphics.lineStyle(2, 0xffd166, 0.8)
-    this.feverGaugeGraphics.strokeRoundedRect(0, 0, width, height, 8)
-
-    if (clamped > 0) {
-      const ratio = clamped / FEVER_MAX
-      const fillColor = this.feverActive ? 0xff6f61 : 0xffd166
-      this.feverGaugeGraphics.fillStyle(fillColor, this.feverActive ? 0.9 : 0.8)
-      this.feverGaugeGraphics.fillRoundedRect(2, 2, (width - 4) * ratio, height - 4, 6)
-      
-      // フィーバー中は光るエフェクト
-      if (this.feverActive) {
-        this.feverGaugeGraphics.fillStyle(0xffffff, 0.3)
-        this.feverGaugeGraphics.fillRoundedRect(2, 2, (width - 4) * ratio, height - 4, 6)
+    const steps = ['3', '2', '1', 'スタート！']
+    let i = 0
+    const step = () => {
+      const isLast = i === steps.length - 1
+      label.setText(steps[i])
+      label.setFontSize(isLast ? 44 : 72)
+      label.setScale(0.4).setAlpha(1)
+      this.tweens.add({ targets: label, scale: 1, duration: 250, ease: 'Back.easeOut' })
+      this.playTone(isLast ? 880 : 520, 0.12, 0.12, 'triangle')
+      i++
+      if (i < steps.length) {
+        this.time.delayedCall(700, step)
+      } else {
+        this.time.delayedCall(650, () => {
+          overlay.destroy()
+          label.destroy()
+          this.beginPlay()
+        })
       }
     }
-
-    if (this.feverActive) {
-      const remain = Math.max(0, this.feverTimeLeft).toFixed(1)
-      this.feverLabel.setText(`🔥 フィーバー 残り${remain}秒`)
-      this.feverLabel.setColor('#ffb3a7')
-    } else {
-      this.feverLabel.setText(`🍻 フィーバー ${Math.round(clamped)}%`)
-      this.feverLabel.setColor('#ffd166')
-    }
+    step()
   }
 
-  addFeverEnergy(amount: number) {
-    if (amount <= 0) return
-    if (this.feverActive) {
-      const extraSeconds = Math.min(2, amount / 60)
-      this.extendFever(extraSeconds)
-      return
-    }
-    this.feverGauge = Phaser.Math.Clamp(this.feverGauge + amount, 0, FEVER_MAX)
-    if (this.feverGauge >= FEVER_MAX) {
-      this.activateFever()
-    }
-    this.updateFeverUI()
+  beginPlay() {
+    this.started = true
+    this.startTimer()
+    this.resetHintTimer()
   }
 
-  activateFever() {
-    if (this.feverActive) return
-    this.feverActive = true
-    this.feverGauge = FEVER_MAX
-    this.feverTimeLeft = FEVER_DURATION
-    this.updateFeverUI()
-    this.playFeverChime()
-    if (this.feverOverlay) {
-      this.tweens.add({ targets: this.feverOverlay, alpha: 0.35, duration: 250, ease: 'Sine.easeOut' })
-    }
-    this.sound.setRate(1.12)
-    this.feverTimer?.remove()
-    this.feverTimer = this.time.addEvent({
-      delay: 100,
-      loop: true,
-      callback: () => {
-        this.feverTimeLeft = Math.max(0, this.feverTimeLeft - 0.1)
-        if (this.feverTimeLeft <= 0) {
-          this.endFever()
-        } else {
-          this.updateFeverUI()
-        }
-      }
-    })
+  // ───────────────────────── 入力 ─────────────────────────
+
+  private canAct() {
+    return this.started && !this.busy && !this.gameOver
   }
 
-  extendFever(extraSeconds: number) {
-    if (!this.feverActive || extraSeconds <= 0) return
-    this.feverTimeLeft = Phaser.Math.Clamp(this.feverTimeLeft + extraSeconds, 0, FEVER_DURATION + 2)
-    this.updateFeverUI()
-  }
-
-  endFever() {
-    if (!this.feverActive) return
-    this.feverActive = false
-    this.feverGauge = 0
-    this.feverTimer?.remove()
-    this.feverTimer = undefined
-    if (this.feverOverlay) {
-      this.tweens.add({ targets: this.feverOverlay, alpha: 0, duration: 250, ease: 'Sine.easeOut' })
-    }
-    this.sound.setRate(1)
-    this.updateFeverUI()
-  }
-
-  createGrid() {
-    for (let r = 0; r < ROWS; r++) {
-      this.tiles[r] = []
-      for (let c = 0; c < COLS; c++) {
-        const v = this.board[r][c]
-        const x = this.originX + c * TILE + TILE / 2
-        const y = this.originY + r * TILE + TILE / 2
-        const img = this.add.image(x, y, this.keyFor(v)) as TileGO
-        img.setDisplaySize(TILE - 4, TILE - 4)
-        img.setInteractive({ useHandCursor: true })
-        // 画像の透過処理とレンダリング品質を改善
-        img.setAlpha(1)
-        img.setBlendMode(Phaser.BlendModes.NORMAL)
-        img.r = r; img.c = c; img.v = v
-        this.tiles[r][c] = img
-      }
-    }
-  }
-
-  boardToWorld(r: number, c: number) {
-    const x = this.originX + c * TILE + TILE / 2
-    const y = this.originY + r * TILE + TILE / 2
-    return { x, y }
-  }
-
-  pickCell(pointer: Phaser.Input.Pointer) {
-    const cx = pointer.x - this.originX
-    const cy = pointer.y - this.originY
-    const c = Math.floor(cx / TILE)
-    const r = Math.floor(cy / TILE)
-    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return null
+  pickCell(pointer: Phaser.Input.Pointer): CellRef | null {
+    const c = Math.floor((pointer.x - this.originX) / TILE)
+    const r = Math.floor((pointer.y - this.originY) / TILE)
+    if (!inBounds(r, c)) return null
     return { r, c }
   }
 
   onPointerDown(pointer: Phaser.Input.Pointer) {
+    if (!this.canAct()) return
     const cell = this.pickCell(pointer)
     if (!cell) return
-    this.selected = cell
-    this.pulse(cell.r, cell.c, true)
+    this.dragStart = { x: pointer.x, y: pointer.y, cell }
+  }
+
+  onPointerMove(pointer: Phaser.Input.Pointer) {
+    if (!this.dragStart || !pointer.isDown || !this.canAct()) return
+    const dx = pointer.x - this.dragStart.x
+    const dy = pointer.y - this.dragStart.y
+    if (Math.abs(dx) < SWIPE_THRESHOLD && Math.abs(dy) < SWIPE_THRESHOLD) return
+
+    const from = this.dragStart.cell
+    this.dragStart = null
+    const horizontal = Math.abs(dx) >= Math.abs(dy)
+    const to = horizontal
+      ? { r: from.r, c: from.c + Math.sign(dx) }
+      : { r: from.r + Math.sign(dy), c: from.c }
+    if (!inBounds(to.r, to.c)) return
+    this.setSelected(null)
+    void this.runAction(() => this.doSwap(from, to))
   }
 
   onPointerUp(pointer: Phaser.Input.Pointer) {
-    if (!this.selected) return
-    if (this.timeLeft <= 0) return
-    const from = this.selected
-    this.pulse(from.r, from.c, false)
-    this.selected = null
+    const start = this.dragStart
+    this.dragStart = null
+    if (!start || !this.canAct()) return
 
-    const to = this.pickCell(pointer)
-    if (!to || !isAdjacent(from.r, from.c, to.r, to.c)) return
-    this.trySwap(from, to)
-  }
+    const cell = this.pickCell(pointer)
+    if (!cell) return
 
-  pulse(r: number, c: number, on: boolean) {
-    const t = this.tiles[r][c]
-    if (!t || !t.scene) return // タイルが存在しないか既に破棄されている場合は何もしない
-    
-    // 既存のTweenを完全に停止
-    this.tweens.killTweensOf(t)
-    
-    // 強制的に正常状態にリセット
-    const { x, y } = this.boardToWorld(r, c)
-    t.x = x
-    t.y = y
-    t.setDisplaySize(TILE - 4, TILE - 4) // setScaleの代わりにsetDisplaySizeを使用
-    t.clearTint()
-    
-    // 選択エフェクトを適用
-    if (on) {
-      // 控えめな選択エフェクト（位置のみ変更、サイズは変更しない）
-      this.tweens.add({
-        targets: t,
-        y: y - 4, // 浮き上がりエフェクトのみ
-        duration: 100,
-        ease: 'Sine.easeOut'
-      })
-      t.setTint(0xffffaa)
+    // 別マスで離した場合は隣接スワップとして扱う
+    if (cell.r !== start.cell.r || cell.c !== start.cell.c) {
+      if (isAdjacent(start.cell.r, start.cell.c, cell.r, cell.c)) {
+        this.setSelected(null)
+        void this.runAction(() => this.doSwap(start.cell, cell))
+      }
+      return
     }
-    // off時は既にリセット済みなので何もしない
+
+    // タップ操作
+    if (isBomb(this.board[cell.r][cell.c])) {
+      this.setSelected(null)
+      void this.runAction(() => this.explodeBombAt(cell.r, cell.c))
+      return
+    }
+    if (this.selected) {
+      const prev = this.selected
+      if (prev.r === cell.r && prev.c === cell.c) {
+        this.setSelected(null)
+        return
+      }
+      if (isAdjacent(prev.r, prev.c, cell.r, cell.c)) {
+        this.setSelected(null)
+        void this.runAction(() => this.doSwap(prev, cell))
+        return
+      }
+    }
+    this.setSelected(cell)
   }
 
-  private dispatchMamaEmotion(emotion: 'normal' | 'smile' | 'surprise' | 'sad' | 'happy' | 'gameover') {
-    const event = new CustomEvent('mamaEmotion', { detail: emotion });
-    window.dispatchEvent(event);
+  setSelected(cell: CellRef | null) {
+    this.selected = cell
+    this.selectionFrame.clear()
+    if (!cell) return
+    const x = this.originX + cell.c * TILE
+    const y = this.originY + cell.r * TILE
+    this.selectionFrame.lineStyle(3, 0xffe066, 0.95)
+    this.selectionFrame.strokeRoundedRect(x + 2, y + 2, TILE - 4, TILE - 4, 10)
+  }
+
+  // すべてのプレイヤー操作はここを通す（多重実行・タイムアップとの競合を防ぐ）
+  private async runAction(fn: () => Promise<void>) {
+    if (this.busy || this.gameOver) return
+    this.busy = true
+    this.clearHint()
+    this.hintTimer?.remove()
+    try {
+      await fn()
+    } finally {
+      this.busy = false
+      this.afterAction()
+    }
+  }
+
+  private afterAction() {
+    if (this.endRequested) {
+      this.endRequested = false
+      this.endGame()
+      return
+    }
+    if (this.gameOver) return
+    if (!hasValidMove(this.board)) {
+      void this.reshuffleBoard()
+      return
+    }
+    this.resetHintTimer()
+  }
+
+  // ───────────────────────── ヒント / シャッフル ─────────────────────────
+
+  resetHintTimer() {
+    this.clearHint()
+    this.hintTimer?.remove()
+    this.hintTimer = this.time.delayedCall(HINT_DELAY, () => this.showHint())
+  }
+
+  showHint() {
+    if (this.busy || this.gameOver || !this.started) return
+    const hint = findHintMove(this.board)
+    if (!hint) return
+    const targets = new Set<TileGO>()
+    const a = this.tiles[hint.from.r]?.[hint.from.c]
+    const b = this.tiles[hint.to.r]?.[hint.to.c]
+    if (a) targets.add(a)
+    if (b) targets.add(b)
+    if (targets.size === 0) return
+    this.hintTargets = Array.from(targets)
+    this.hintTargets.forEach((t) => t.setTint(0xfff2b3))
+    this.hintTween = this.tweens.add({
+      targets: this.hintTargets,
+      alpha: 0.45,
+      duration: 380,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    })
+  }
+
+  clearHint() {
+    this.hintTween?.remove()
+    this.hintTween = undefined
+    this.hintTargets.forEach((t) => {
+      if (t && t.scene) {
+        t.setAlpha(1)
+        t.clearTint()
+      }
+    })
+    this.hintTargets = []
+  }
+
+  private async reshuffleBoard() {
+    this.busy = true
+    try {
+      this.showCenterBanner('おつまみ シャッフル！', '#4ecdc4')
+      this.playTone(420, 0.15, 0.12, 'triangle')
+      await this.fadeAllTiles(0)
+      shuffleBoard(this.board, TYPES)
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const tile = this.tiles[r][c]
+          const v = this.board[r][c]
+          if (tile && tile.scene && tile.v !== v) {
+            tile.setTexture(this.keyFor(v))
+            tile.setDisplaySize(TILE - 4, TILE - 4)
+            tile.v = v
+          }
+        }
+      }
+      await this.fadeAllTiles(1)
+    } finally {
+      this.busy = false
+      if (!this.gameOver) this.resetHintTimer()
+      if (this.endRequested) {
+        this.endRequested = false
+        this.endGame()
+      }
+    }
+  }
+
+  private fadeAllTiles(alpha: number) {
+    const targets: TileGO[] = []
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const t = this.tiles[r][c]
+        if (t && t.scene) targets.push(t)
+      }
+    }
+    return new Promise<void>((resolve) => {
+      this.tweens.add({ targets, alpha, duration: 220, ease: 'Sine.easeInOut', onComplete: () => resolve() })
+    })
+  }
+
+  // ───────────────────────── ママ連携 / サウンド ─────────────────────────
+
+  private dispatchMamaEmotion(emotion: MamaEmotion) {
+    window.dispatchEvent(new CustomEvent('mamaEmotion', { detail: emotion }))
   }
 
   private dispatchMasakiPopup() {
-    const event = new CustomEvent('masakiPopup');
-    window.dispatchEvent(event);
+    window.dispatchEvent(new CustomEvent('masakiPopup'))
+  }
+
+  private vibrate(ms: number) {
+    try {
+      navigator.vibrate?.(ms)
+    } catch {
+      // noop
+    }
   }
 
   private getAudioContext(): AudioContext | null {
     const manager = this.sound as Phaser.Sound.WebAudioSoundManager | Phaser.Sound.HTML5AudioSoundManager | Phaser.Sound.NoAudioSoundManager
     if ('context' in manager) {
       const context = (manager as Phaser.Sound.WebAudioSoundManager).context
-      if (context) {
-        return context
-      }
+      if (context) return context
     }
     return null
   }
@@ -449,335 +534,187 @@ export default class MainScene extends Phaser.Scene {
   }
 
   private playMatchSound(comboLevel: number) {
-    if (this.sound.locked) return
-    const baseFreq = 440 + (comboLevel * 110)
+    const baseFreq = 440 + comboLevel * 110
     this.playTone(baseFreq, 0.15, 0.15, 'triangle')
     this.time.delayedCall(80, () => this.playTone(baseFreq * 1.5, 0.1, 0.1, 'triangle'))
   }
 
+  private playBuzz() {
+    this.playTone(150, 0.18, 0.12, 'square')
+  }
+
   private playLandingBeat() {
-    if (this.sound.locked) return
-    this.playTone(220, 0.12, 0.15, 'square')
-    this.time.delayedCall(90, () => this.playTone(320, 0.08, 0.1, 'square'))
+    this.playTone(220, 0.12, 0.12, 'square')
+    this.time.delayedCall(90, () => this.playTone(320, 0.08, 0.08, 'square'))
   }
 
   private playFeverChime() {
-    if (this.sound.locked) return
-    // より華やかなフィーバー音
     this.playTone(660, 0.25, 0.12, 'sawtooth')
     this.time.delayedCall(120, () => this.playTone(880, 0.2, 0.1, 'sawtooth'))
     this.time.delayedCall(240, () => this.playTone(1100, 0.15, 0.08, 'sawtooth'))
   }
 
   private playBombSound() {
-    if (this.sound.locked) return
-    // 爆発音
     this.playTone(80, 0.3, 0.2, 'sawtooth')
     this.time.delayedCall(50, () => this.playTone(60, 0.2, 0.15, 'square'))
   }
 
-  async trySwap(a: { r: number; c: number }, b: { r: number; c: number }) {
-    // 爆弾がクリックされた場合は即座に爆発
-    if (isBomb(this.board[a.r][a.c])) {
-      await this.explodeBombAt(a.r, a.c)
-      return
-    }
-    if (isBomb(this.board[b.r][b.c])) {
-      await this.explodeBombAt(b.r, b.c)
-      return
-    }
+  // ───────────────────────── フィーバー ─────────────────────────
 
-    await this.animateSwap(a, b)
-    swap(this.board, a.r, a.c, b.r, b.c)
-    const matches = findMatches(this.board)
-    if (matches.size === 0) {
-      // 戻す
-      this.dispatchMamaEmotion('sad');
-      await this.animateSwap(a, b)
-      swap(this.board, a.r, a.c, b.r, b.c)
+  addFeverEnergy(amount: number) {
+    if (amount <= 0) return
+    if (this.feverActive) {
+      this.extendFever(Math.min(2, amount / 60))
       return
     }
-    await this.resolveMatches()
+    this.feverGauge = Phaser.Math.Clamp(this.feverGauge + amount, 0, FEVER_MAX)
+    if (this.feverGauge >= FEVER_MAX) {
+      this.activateFever()
+    }
+    this.updateFeverUI()
   }
 
-  async animateSwap(a: { r: number; c: number }, b: { r: number; c: number }) {
-    const ta = this.tiles[a.r][a.c]
-    const tb = this.tiles[b.r][b.c]
-    // swap references in tiles grid
-    this.tiles[a.r][a.c] = tb
-    this.tiles[b.r][b.c] = ta
-    const pa = this.boardToWorld(a.r, a.c)
-    const pb = this.boardToWorld(b.r, b.c)
-    return new Promise<void>((resolve) => {
-      this.tweens.add({ targets: ta, x: pb.x, y: pb.y, duration: 120, ease: 'Sine.easeInOut' })
-      this.tweens.add({ targets: tb, x: pa.x, y: pa.y, duration: 120, ease: 'Sine.easeInOut', onComplete: () => resolve() })
+  activateFever() {
+    if (this.feverActive) return
+    this.feverActive = true
+    this.feverGauge = FEVER_MAX
+    this.feverTimeLeft = FEVER_DURATION
+    this.updateFeverUI()
+    this.playFeverChime()
+    this.dispatchMamaEmotion('fever')
+    this.showCenterBanner('🔥 フィーバー！ ×2 🔥', '#ff6f61')
+    if (this.feverOverlay) {
+      this.tweens.add({ targets: this.feverOverlay, alpha: 0.35, duration: 250, ease: 'Sine.easeOut' })
+    }
+    this.sound.setRate(1.12)
+    this.feverTimer?.remove()
+    this.feverTimer = this.time.addEvent({
+      delay: 100,
+      loop: true,
+      callback: () => {
+        this.feverTimeLeft = Math.max(0, this.feverTimeLeft - 0.1)
+        if (this.feverTimeLeft <= 0) {
+          this.endFever()
+        } else {
+          this.updateFeverUI()
+        }
+      },
     })
   }
 
-  async resolveMatches() {
-    // 選択状態をクリア
-    if (this.selected) {
-      this.pulse(this.selected.r, this.selected.c, false)
-      this.selected = null
+  extendFever(extraSeconds: number) {
+    if (!this.feverActive || extraSeconds <= 0) return
+    this.feverTimeLeft = Phaser.Math.Clamp(this.feverTimeLeft + extraSeconds, 0, FEVER_DURATION + 2)
+    this.updateFeverUI()
+  }
+
+  endFever() {
+    if (!this.feverActive) return
+    this.feverActive = false
+    this.feverGauge = 0
+    this.feverTimer?.remove()
+    this.feverTimer = undefined
+    if (this.feverOverlay) {
+      this.tweens.add({ targets: this.feverOverlay, alpha: 0, duration: 250, ease: 'Sine.easeOut' })
     }
-    
-    this.comboLevel = 0
-    while (true) {
-      const matches = findMatches(this.board)
-      if (matches.size === 0) break
+    this.sound.setRate(1)
+    this.updateFeverUI()
+  }
 
-      this.dispatchMamaEmotion('smile');
-      if (this.comboLevel > 0) {
-        this.dispatchMamaEmotion('surprise');
+  // ───────────────────────── 盤面描画 ─────────────────────────
+
+  createGrid() {
+    for (let r = 0; r < ROWS; r++) {
+      this.tiles[r] = []
+      for (let c = 0; c < COLS; c++) {
+        const v = this.board[r][c]
+        const { x, y } = this.boardToWorld(r, c)
+        const img = this.add.image(x, y, this.keyFor(v)) as TileGO
+        img.setDisplaySize(TILE - 4, TILE - 4)
+        img.setInteractive({ useHandCursor: true })
+        img.r = r; img.c = c; img.v = v
+        this.tiles[r][c] = img
       }
-      
-      // マッチ音を再生
-      this.playMatchSound(this.comboLevel)
-
-      // スコア計算
-      const runs: Run[] = scanRuns(this.board)
-      const runLengths = runs.map((run) => run.length)
-      const base = scoreForRuns(runLengths)
-      const multSeq = [1, 1.2, 1.5, 2, 3, 5]
-      const mult = multSeq[Math.min(this.comboLevel, multSeq.length - 1)]
-      const feverMult = this.feverActive ? 2 : 1
-      const gained = Math.round(base * mult * feverMult)
-      this.score += gained
-      if (this.uiScore) this.uiScore.setText(`SCORE ${this.score.toLocaleString()}`)
-      const center = this.centerOfMatches(matches)
-      this.showFloatingText(center.x, center.y, `+${gained.toLocaleString()}`, this.feverActive ? '#ffb3a7' : '#ffd166')
-      
-      // コンボ表示の更新
-      this.updateComboDisplay()
-
-      // 5個以上消去でmasaki登場
-      const hasLongRun = runs.some((run) => run.length >= 5)
-      if (hasLongRun) {
-        this.dispatchMasakiPopup()
-        this.showFloatingText(center.x, center.y - 24, 'BONUS!', '#4ecdc4')
-        // 爆弾生成
-        const bombPositions = getBombPositions(runs)
-        createBombs(this.board, bombPositions)
-      }
-
-      const energyFromRuns = runs.reduce((acc, run) => acc + run.length * 8, 0)
-      const comboBonus = this.comboLevel * 12
-      if (hasLongRun) {
-        this.addFeverEnergy(35)
-      }
-      this.addFeverEnergy(energyFromRuns + comboBonus)
-      // パーティクルエフェクトを追加
-      this.createMatchParticles(matches)
-      
-      // fade out matched
-      await new Promise<void>((resolve) => {
-        const tgs: Phaser.GameObjects.Image[] = []
-        matches.forEach((key) => {
-          const [r, c] = key.split(',').map(Number)
-          const go = this.tiles[r][c]
-          tgs.push(go)
-        })
-        this.tweens.add({ 
-          targets: tgs, 
-          alpha: 0, 
-          scaleX: 1.2,
-          scaleY: 1.2,
-          duration: 200, 
-          ease: 'Back.easeIn',
-          onComplete: () => resolve() 
-        })
-      })
-      clearMatches(this.board, matches)
-      // remove and set placeholders
-      matches.forEach((key) => {
-        const [r, c] = key.split(',').map(Number)
-        const go = this.tiles[r][c]
-        go.destroy()
-        // placeholder null, will refill after collapse
-        // mark with null
-        ;(this.tiles as any)[r][c] = null
-      })
-
-      // collapse model
-      collapseAndRefill(this.board, TYPES)
-
-      // rebuild tile gameobjects for nulls and animate fall
-      await this.animateCollapse()
-      this.comboLevel++
     }
   }
 
-  startTimer() {
-    this.timeLeft = 60
-    if (this.uiTime) this.uiTime.setText(`TIME ${this.timeLeft}`)
-    this.ticking?.remove(false)
-    this.ticking = this.time.addEvent({ delay: 1000, loop: true, callback: () => {
-      this.timeLeft--
-      if (this.uiTime) this.uiTime.setText(`TIME ${Math.max(0, this.timeLeft)}`)
-      if (this.timeLeft <= 10 && this.timeLeft > 0) {
-        this.enableTimeWarning()
-      }
-      if (this.timeLeft <= 0) {
-        this.endGame()
-      }
-    } })
+  boardToWorld(r: number, c: number) {
+    return {
+      x: this.originX + c * TILE + TILE / 2,
+      y: this.originY + r * TILE + TILE / 2,
+    }
   }
 
-  enableTimeWarning() {
-    if (this.timeWarningActive || !this.uiTime) return
-    this.timeWarningActive = true
-    this.uiTime.setColor('#ff2e63')
+  // ───────────────────────── 演出ヘルパー ─────────────────────────
+
+  showFloatingText(x: number, y: number, text: string, color = '#ffd166') {
+    const label = this.add.text(x, y, text, {
+      fontFamily: 'Arial',
+      fontSize: '20px',
+      fontStyle: 'bold',
+      color,
+      stroke: '#000000',
+      strokeThickness: 4,
+    }).setOrigin(0.5).setDepth(20)
+
     this.tweens.add({
-      targets: this.uiTime,
+      targets: label,
+      y: y - 36,
+      alpha: 0,
       scaleX: 1.15,
       scaleY: 1.15,
-      duration: 320,
-      yoyo: true,
-      repeat: -1
+      duration: 700,
+      ease: 'Cubic.easeOut',
+      onComplete: () => label.destroy(),
     })
-    this.cameras.main.flash(220, 255, 50, 90, false)
   }
 
-  endGame() {
-    this.dispatchMamaEmotion('gameover');
-    // 仕様書のリザルト高得点コメント
-    if (this.score >= 8000) {
-      this.dispatchMamaEmotion('happy');
-    }
+  showCenterBanner(text: string, color = '#ffd166') {
+    const banner = this.add.text(this.cameras.main.width / 2, BOARD_TOP + H / 2, text, {
+      fontFamily: 'Arial',
+      fontSize: '30px',
+      fontStyle: 'bold',
+      color,
+      stroke: '#000000',
+      strokeThickness: 6,
+    }).setOrigin(0.5).setDepth(30).setScale(0.5).setAlpha(0)
 
-    this.endFever()
-    this.saveBestScore()
-    this.ticking?.remove(false)
-    this.input.off('pointerdown', this.onPointerDown, this)
-    this.input.off('pointerup', this.onPointerUp, this)
-    const w = 360, h = 200
-    const x = (this.cameras.main.width - w) / 2
-    const y = (this.cameras.main.height - h) / 2
-    const panel = this.add.rectangle(x, y, w, h, 0x000000, 0.7).setOrigin(0).setStrokeStyle(2, 0xffffff, 0.5)
-    const title = this.add.text(x + 16, y + 16, 'RESULT', { fontFamily: 'monospace', fontSize: '20px', color: '#e6e9ef' })
-    const scoreText = this.add.text(x + 16, y + 56, `Score: ${this.score}`, { fontFamily: 'monospace', fontSize: '18px', color: '#e6e9ef' })
-    const comment = this.commentForScore(this.score)
-    const commentText = this.add.text(x + 16, y + 88, comment, { fontFamily: 'sans-serif', fontSize: '16px', color: '#ffd166', wordWrap: { width: w - 32 } })
-    const bestText = this.add.text(x + 16, y + 132, `Best: ${this.bestScore.toLocaleString()}`, { fontFamily: 'monospace', fontSize: '15px', color: '#8ecae6' })
-    const btn = this.add.text(x + w - 120, y + h - 36, '[ Restart ]', { fontFamily: 'monospace', fontSize: '18px', color: '#06d6a0' })
-      .setInteractive({ useHandCursor: true })
-      .on('pointerup', () => {
-        panel.destroy(); title.destroy(); scoreText.destroy(); commentText.destroy(); bestText.destroy(); btn.destroy()
-        this.scene.restart()
-      })
-  }
-
-  commentForScore(s: number) {
-    if (s >= 15000) return '盛り上がっとるぞいね！'
-    if (s >= 8000) return 'やるじぃ、ほんに！'
-    if (s >= 3000) return 'うまいげんて！'
-    return 'また来まっし〜'
-  }
-
-  async explodeBombAt(bombR: number, bombC: number) {
-    // 爆発音を再生
-    this.playBombSound()
-    
-    // 爆発エフェクト
-    this.createExplosionEffect(bombR, bombC)
-    
-    // 爆発範囲を取得
-    const exploded = explodeBomb(this.board, bombR, bombC)
-    
-    // スコア加算（爆発したタイル数 × 200点）
-    const bombScore = exploded.size * 200
-    this.score += bombScore
-    if (this.uiScore) this.uiScore.setText(`SCORE ${this.score}`)
-    const center = this.centerOfMatches(exploded)
-    this.showFloatingText(center.x, center.y, `💥 +${bombScore}`, '#ff7b54')
-
-    // 爆発したタイルをアニメーション
-    await new Promise<void>((resolve) => {
-      const tgs: Phaser.GameObjects.Image[] = []
-      exploded.forEach((key) => {
-        const [r, c] = key.split(',').map(Number)
-        const go = this.tiles[r][c]
-        if (go) tgs.push(go)
-      })
-      this.tweens.add({ 
-        targets: tgs, 
-        alpha: 0, 
-        scaleX: 1.5,
-        scaleY: 1.5,
-        duration: 300, 
-        ease: 'Back.easeIn',
-        onComplete: () => resolve() 
-      })
+    this.tweens.add({
+      targets: banner,
+      scale: 1,
+      alpha: 1,
+      duration: 200,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        this.tweens.add({
+          targets: banner,
+          alpha: 0,
+          y: banner.y - 30,
+          delay: 600,
+          duration: 350,
+          onComplete: () => banner.destroy(),
+        })
+      },
     })
-
-    // 盤面から消去
-    clearMatches(this.board, exploded)
-    exploded.forEach((key) => {
-      const [r, c] = key.split(',').map(Number)
-      const go = this.tiles[r][c]
-      if (go) {
-        go.destroy()
-        ;(this.tiles as any)[r][c] = null
-      }
-    })
-
-    // 重力処理
-    collapseAndRefill(this.board, TYPES)
-    await this.animateCollapse()
-    
-    // 新しいマッチがあるかチェック
-    await this.resolveMatches()
   }
 
-  updateComboDisplay() {
-    if (!this.uiCombo) return
-    
-    if (this.comboLevel > 0) {
-      const multSeq = [1, 1.2, 1.5, 2, 3, 5]
-      const mult = multSeq[Math.min(this.comboLevel, multSeq.length - 1)]
-      this.uiCombo.setText(`${this.comboLevel + 1} COMBO! ×${mult}`)
-      this.uiCombo.setAlpha(1)
-      
-      // コンボエフェクト
-      this.tweens.add({
-        targets: this.uiCombo,
-        scaleX: 1.2,
-        scaleY: 1.2,
-        duration: 150,
-        ease: 'Back.easeOut',
-        yoyo: true
-      })
-      
-      // 3秒後にフェードアウト
-      this.time.delayedCall(3000, () => {
-        if (this.uiCombo) {
-          this.tweens.add({
-            targets: this.uiCombo,
-            alpha: 0,
-            duration: 500
-          })
-        }
-      })
-    } else {
-      this.uiCombo.setAlpha(0)
-    }
+  showComboBanner(comboLevel: number, mult: number) {
+    if (comboLevel <= 0) return
+    this.showCenterBanner(`${comboLevel + 1} コンボ！ ×${mult}`, '#4ecdc4')
   }
 
   createMatchParticles(matches: Set<string>) {
     matches.forEach((key) => {
       const [r, c] = key.split(',').map(Number)
       const { x, y } = this.boardToWorld(r, c)
-      
-      // キラキラエフェクト
       for (let i = 0; i < 3; i++) {
         const particle = this.add.circle(
           x + (Math.random() - 0.5) * 20,
           y + (Math.random() - 0.5) * 20,
           2 + Math.random() * 3,
           0xffd700,
-          0.8
-        )
-        
+          0.8,
+        ).setDepth(15)
         this.tweens.add({
           targets: particle,
           y: y - 30 - Math.random() * 20,
@@ -786,7 +723,7 @@ export default class MainScene extends Phaser.Scene {
           scaleY: 0,
           duration: 800 + Math.random() * 400,
           ease: 'Quad.easeOut',
-          onComplete: () => particle.destroy()
+          onComplete: () => particle.destroy(),
         })
       }
     })
@@ -794,40 +731,33 @@ export default class MainScene extends Phaser.Scene {
 
   createExplosionEffect(r: number, c: number) {
     const { x, y } = this.boardToWorld(r, c)
-    
-    // 爆発円エフェクト
-    const explosion = this.add.circle(x, y, 0, 0xff6600, 0.8)
+    const explosion = this.add.circle(x, y, 0, 0xff6600, 0.8).setDepth(15)
     this.tweens.add({
       targets: explosion,
       radius: TILE * 1.8,
       alpha: 0,
       duration: 500,
       ease: 'Quad.easeOut',
-      onComplete: () => explosion.destroy()
+      onComplete: () => explosion.destroy(),
     })
 
-    // 火花エフェクト
     for (let i = 0; i < 12; i++) {
       const angle = (i / 12) * Math.PI * 2
-      const spark = this.add.circle(x, y, 2 + Math.random() * 2, 0xffaa00)
+      const spark = this.add.circle(x, y, 2 + Math.random() * 2, 0xffaa00).setDepth(15)
       const distance = 40 + Math.random() * 30
-      const targetX = x + Math.cos(angle) * distance
-      const targetY = y + Math.sin(angle) * distance
-      
       this.tweens.add({
         targets: spark,
-        x: targetX,
-        y: targetY,
+        x: x + Math.cos(angle) * distance,
+        y: y + Math.sin(angle) * distance,
         alpha: 0,
         scaleX: 0,
         scaleY: 0,
         duration: 400 + Math.random() * 200,
         ease: 'Quad.easeOut',
-        onComplete: () => spark.destroy()
+        onComplete: () => spark.destroy(),
       })
     }
-    
-    // 画面シェイク
+
     this.cameras.main.shake(200, 0.01)
   }
 
@@ -846,33 +776,184 @@ export default class MainScene extends Phaser.Scene {
     return { x: sx / n, y: sy / n }
   }
 
+  // ───────────────────────── ゲームロジック ─────────────────────────
+
+  async doSwap(a: CellRef, b: CellRef) {
+    if (isBomb(this.board[a.r][a.c])) {
+      await this.explodeBombAt(a.r, a.c)
+      return
+    }
+    if (isBomb(this.board[b.r][b.c])) {
+      await this.explodeBombAt(b.r, b.c)
+      return
+    }
+
+    await this.animateSwap(a, b)
+    swap(this.board, a.r, a.c, b.r, b.c)
+    const matches = findMatches(this.board)
+    if (matches.size === 0) {
+      this.dispatchMamaEmotion('sad')
+      this.playBuzz()
+      await this.animateSwap(a, b)
+      swap(this.board, a.r, a.c, b.r, b.c)
+      return
+    }
+    await this.resolveMatches()
+  }
+
+  async animateSwap(a: CellRef, b: CellRef) {
+    const ta = this.tiles[a.r][a.c]
+    const tb = this.tiles[b.r][b.c]
+    this.tiles[a.r][a.c] = tb
+    this.tiles[b.r][b.c] = ta
+    const pa = this.boardToWorld(a.r, a.c)
+    const pb = this.boardToWorld(b.r, b.c)
+    return new Promise<void>((resolve) => {
+      this.tweens.add({ targets: ta, x: pb.x, y: pb.y, duration: 120, ease: 'Sine.easeInOut' })
+      this.tweens.add({ targets: tb, x: pa.x, y: pa.y, duration: 120, ease: 'Sine.easeInOut', onComplete: () => resolve() })
+    })
+  }
+
+  async resolveMatches() {
+    this.setSelected(null)
+    this.comboLevel = 0
+
+    while (true) {
+      const matches = findMatches(this.board)
+      if (matches.size === 0) break
+
+      this.dispatchMamaEmotion(this.comboLevel > 0 ? 'surprise' : 'smile')
+      this.playMatchSound(this.comboLevel)
+      this.vibrate(20)
+
+      const runs: Run[] = scanRuns(this.board)
+      const base = scoreForRuns(runs.map((run) => run.length))
+      const mult = COMBO_MULT[Math.min(this.comboLevel, COMBO_MULT.length - 1)]
+      const feverMult = this.feverActive ? 2 : 1
+      const gained = Math.round(base * mult * feverMult)
+      this.score += gained
+      if (this.uiScore) this.uiScore.setText(`SCORE ${this.score.toLocaleString()}`)
+      const center = this.centerOfMatches(matches)
+      this.showFloatingText(center.x, center.y, `+${gained.toLocaleString()}`, this.feverActive ? '#ffb3a7' : '#ffd166')
+      this.showComboBanner(this.comboLevel, mult)
+
+      const hasLongRun = runs.some((run) => run.length >= 5)
+      if (hasLongRun) {
+        this.dispatchMasakiPopup()
+        this.showFloatingText(center.x, center.y - 24, '金箔ビール GET！', '#4ecdc4')
+      }
+
+      const energyFromRuns = runs.reduce((acc, run) => acc + run.length * 8, 0)
+      if (hasLongRun) this.addFeverEnergy(35)
+      this.addFeverEnergy(energyFromRuns + this.comboLevel * 12)
+      this.createMatchParticles(matches)
+
+      // 消去アニメーション
+      await new Promise<void>((resolve) => {
+        const tgs: Phaser.GameObjects.Image[] = []
+        matches.forEach((key) => {
+          const [r, c] = key.split(',').map(Number)
+          const go = this.tiles[r][c]
+          if (go) tgs.push(go)
+        })
+        this.tweens.add({
+          targets: tgs,
+          alpha: 0,
+          scaleX: 1.2,
+          scaleY: 1.2,
+          duration: 200,
+          ease: 'Back.easeIn',
+          onComplete: () => resolve(),
+        })
+      })
+
+      clearMatches(this.board, matches)
+      // 5個以上消しの爆弾は消去後の空きマスに生成する
+      if (hasLongRun) {
+        createBombs(this.board, getBombPositions(runs))
+      }
+
+      matches.forEach((key) => {
+        const [r, c] = key.split(',').map(Number)
+        const go = this.tiles[r][c]
+        if (go) go.destroy()
+        ;(this.tiles[r] as (TileGO | null)[])[c] = null
+      })
+
+      collapseAndRefill(this.board, TYPES)
+      await this.animateCollapse()
+      this.comboLevel++
+    }
+  }
+
+  async explodeBombAt(bombR: number, bombC: number) {
+    this.playBombSound()
+    this.vibrate(40)
+    this.createExplosionEffect(bombR, bombC)
+
+    const exploded = explodeBomb(this.board, bombR, bombC)
+
+    const bombScore = exploded.size * 200
+    this.score += bombScore
+    if (this.uiScore) this.uiScore.setText(`SCORE ${this.score.toLocaleString()}`)
+    const center = this.centerOfMatches(exploded)
+    this.showFloatingText(center.x, center.y, `💥 +${bombScore.toLocaleString()}`, '#ff7b54')
+    this.addFeverEnergy(exploded.size * 6)
+
+    await new Promise<void>((resolve) => {
+      const tgs: Phaser.GameObjects.Image[] = []
+      exploded.forEach((key) => {
+        const [r, c] = key.split(',').map(Number)
+        const go = this.tiles[r][c]
+        if (go) tgs.push(go)
+      })
+      this.tweens.add({
+        targets: tgs,
+        alpha: 0,
+        scaleX: 1.5,
+        scaleY: 1.5,
+        duration: 300,
+        ease: 'Back.easeIn',
+        onComplete: () => resolve(),
+      })
+    })
+
+    clearMatches(this.board, exploded)
+    exploded.forEach((key) => {
+      const [r, c] = key.split(',').map(Number)
+      const go = this.tiles[r][c]
+      if (go) go.destroy()
+      ;(this.tiles[r] as (TileGO | null)[])[c] = null
+    })
+
+    collapseAndRefill(this.board, TYPES)
+    await this.animateCollapse()
+    await this.resolveMatches()
+  }
+
   async animateCollapse() {
-    // すべてのタイルのTweenを停止し、状態を完全にリセット
+    // 進行中の Tween を止めて位置・サイズを正規化
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const img = this.tiles[r][c]
         if (img && img.scene) {
           this.tweens.killTweensOf(img)
-          // 位置とサイズを強制的にリセット
           const { x, y } = this.boardToWorld(r, c)
           img.x = x
           img.y = y
-          img.setDisplaySize(TILE - 4, TILE - 4) // setScaleの代わりにsetDisplaySizeを使用
+          img.setDisplaySize(TILE - 4, TILE - 4)
           img.clearTint()
         }
       }
     }
-    
-    // ensure each position has a GO, create missing
+
     const createAt = (r: number, c: number) => {
       const v = this.board[r][c]
       const { x, y } = this.boardToWorld(r, c)
       const img = this.add.image(x, y - TILE * ROWS, this.keyFor(v)) as TileGO
       img.setDisplaySize(TILE - 4, TILE - 4)
       img.setInteractive({ useHandCursor: true })
-      // 画像の透過処理とレンダリング品質を改善
       img.setAlpha(0)
-      img.setBlendMode(Phaser.BlendModes.NORMAL)
       img.r = r; img.c = c; img.v = v
       this.tiles[r][c] = img
       return img
@@ -882,10 +963,9 @@ export default class MainScene extends Phaser.Scene {
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         let img = this.tiles[r][c] as TileGO | null
-        if (!img || !img.texture) {
+        if (!img || !img.scene) {
           img = createAt(r, c)
         } else {
-          // update texture if value changed
           const v = this.board[r][c]
           if (img.v !== v) {
             img.setTexture(this.keyFor(v))
@@ -907,13 +987,192 @@ export default class MainScene extends Phaser.Scene {
               y: y + LANDING_BOUNCE_OFFSET,
               duration: 90,
               ease: 'Sine.easeOut',
-              yoyo: true
+              yoyo: true,
             })
-          }
+          },
         })
       }
     }
     await new Promise<void>((resolve) => this.time.delayedCall(dropDuration + 15, () => resolve()))
     this.playLandingBeat()
+  }
+
+  // ───────────────────────── タイマー / 終了 ─────────────────────────
+
+  startTimer() {
+    this.timeLeft = GAME_SECONDS
+    if (this.uiTime) this.uiTime.setText(`⏰ ${this.timeLeft}`)
+    this.ticking?.remove(false)
+    this.ticking = this.time.addEvent({
+      delay: 1000,
+      loop: true,
+      callback: () => {
+        this.timeLeft--
+        if (this.uiTime) this.uiTime.setText(`⏰ ${Math.max(0, this.timeLeft)}`)
+        if (this.timeLeft <= 10 && this.timeLeft > 0) {
+          this.enableTimeWarning()
+        }
+        if (this.timeLeft <= 5 && this.timeLeft > 0) {
+          this.playTone(880, 0.08, 0.1, 'square')
+        }
+        if (this.timeLeft <= 0) {
+          this.ticking?.remove(false)
+          this.endGame()
+        }
+      },
+    })
+  }
+
+  enableTimeWarning() {
+    if (this.timeWarningActive || !this.uiTime) return
+    this.timeWarningActive = true
+    this.uiTime.setColor('#ff2e63')
+    this.tweens.add({
+      targets: this.uiTime,
+      scaleX: 1.15,
+      scaleY: 1.15,
+      duration: 320,
+      yoyo: true,
+      repeat: -1,
+    })
+    this.cameras.main.flash(220, 255, 50, 90, false)
+  }
+
+  endGame() {
+    if (this.gameOver) return
+    if (this.busy) {
+      // 連鎖の解決中なら、解決後に終了処理する
+      this.endRequested = true
+      return
+    }
+    this.gameOver = true
+    this.started = false
+    this.endFever()
+    this.clearHint()
+    this.hintTimer?.remove()
+    this.ticking?.remove(false)
+    this.setSelected(null)
+
+    const isNewRecord = this.score > this.bestScore
+    this.saveBestScore()
+    this.dispatchMamaEmotion(this.score >= 8000 ? 'happy' : 'gameover')
+
+    const cam = this.cameras.main
+    const timeUp = this.add.text(cam.width / 2, BOARD_TOP + H / 2, 'タイムアップ！', {
+      fontFamily: 'Arial',
+      fontSize: '40px',
+      fontStyle: 'bold',
+      color: '#ffd166',
+      stroke: '#000000',
+      strokeThickness: 8,
+    }).setOrigin(0.5).setDepth(99).setScale(0.4)
+    this.playTone(523, 0.3, 0.15, 'triangle')
+    this.time.delayedCall(150, () => this.playTone(392, 0.4, 0.15, 'triangle'))
+    this.tweens.add({ targets: timeUp, scale: 1, duration: 300, ease: 'Back.easeOut' })
+    this.time.delayedCall(1000, () => {
+      timeUp.destroy()
+      this.showResult(isNewRecord)
+    })
+  }
+
+  rankForScore(s: number): { rank: string; title: string; color: string } {
+    if (s >= 15000) return { rank: 'S', title: '伝説の常連さん！', color: '#ffd700' }
+    if (s >= 8000) return { rank: 'A', title: 'ちょい吉マスター', color: '#ff8fa3' }
+    if (s >= 3000) return { rank: 'B', title: 'いい飲みっぷり', color: '#8ecae6' }
+    return { rank: 'C', title: 'まずは一杯から', color: '#b5bac4' }
+  }
+
+  commentForScore(s: number) {
+    if (s >= 15000) return '盛り上がっとるぞいね！ちょい吉のママもびっくりや！'
+    if (s >= 8000) return 'やるじぃ、ほんに！'
+    if (s >= 3000) return 'うまいげんて！'
+    return 'また寄ってってまっし〜'
+  }
+
+  showResult(isNewRecord: boolean) {
+    const cam = this.cameras.main
+    const container = this.add.container(0, 0).setDepth(100)
+
+    const overlay = this.add.rectangle(cam.width / 2, cam.height / 2, cam.width, cam.height, 0x000000, 0.6)
+    overlay.setInteractive()
+    container.add(overlay)
+
+    const pw = 320
+    const ph = 300
+    const px = (cam.width - pw) / 2
+    const py = (cam.height - ph) / 2
+    const cx = cam.width / 2
+
+    const panel = this.add.graphics()
+    panel.fillStyle(0x10131c, 0.94)
+    panel.fillRoundedRect(px, py, pw, ph, 18)
+    panel.lineStyle(3, 0xffd166, 0.9)
+    panel.strokeRoundedRect(px, py, pw, ph, 18)
+    container.add(panel)
+
+    const title = this.add.text(cx, py + 28, '本日の成績', {
+      fontFamily: 'Arial', fontSize: '20px', fontStyle: 'bold', color: '#ffd166',
+    }).setOrigin(0.5)
+    container.add(title)
+
+    const { rank, title: rankTitle, color } = this.rankForScore(this.score)
+    const rankText = this.add.text(cx, py + 80, rank, {
+      fontFamily: 'Arial', fontSize: '52px', fontStyle: 'bold', color,
+      stroke: '#000000', strokeThickness: 6,
+    }).setOrigin(0.5).setScale(0)
+    container.add(rankText)
+    this.tweens.add({ targets: rankText, scale: 1, duration: 400, delay: 350, ease: 'Back.easeOut' })
+
+    const rankTitleText = this.add.text(cx, py + 118, rankTitle, {
+      fontFamily: 'Arial', fontSize: '15px', fontStyle: 'bold', color,
+    }).setOrigin(0.5)
+    container.add(rankTitleText)
+
+    const comment = this.add.text(cx, py + 146, `「${this.commentForScore(this.score)}」`, {
+      fontFamily: 'sans-serif', fontSize: '13px', color: '#fff8e7',
+      wordWrap: { width: pw - 36 }, align: 'center',
+    }).setOrigin(0.5, 0)
+    container.add(comment)
+
+    const scoreText = this.add.text(cx, py + 192, 'スコア 0', {
+      fontFamily: 'Arial', fontSize: '24px', fontStyle: 'bold', color: '#ffffff',
+    }).setOrigin(0.5)
+    container.add(scoreText)
+    const counter = { value: 0 }
+    this.tweens.add({
+      targets: counter,
+      value: this.score,
+      duration: 900,
+      ease: 'Cubic.easeOut',
+      onUpdate: () => scoreText.setText(`スコア ${Math.round(counter.value).toLocaleString()}`),
+    })
+
+    const bestLine = isNewRecord
+      ? `🏆 NEW RECORD！自己ベスト更新！`
+      : `自己ベスト ${this.bestScore.toLocaleString()}`
+    const bestText = this.add.text(cx, py + 222, bestLine, {
+      fontFamily: 'Arial', fontSize: '13px', fontStyle: 'bold',
+      color: isNewRecord ? '#ffd700' : '#8ecae6',
+    }).setOrigin(0.5)
+    container.add(bestText)
+    if (isNewRecord) {
+      this.tweens.add({ targets: bestText, alpha: 0.35, duration: 420, yoyo: true, repeat: -1 })
+    }
+
+    const btn = this.add.rectangle(cx, py + ph - 36, 210, 44, 0xe76f51, 1)
+      .setStrokeStyle(2, 0xffffff, 0.6)
+      .setInteractive({ useHandCursor: true })
+    const btnText = this.add.text(cx, py + ph - 36, 'もういっかい あそぶ！', {
+      fontFamily: 'Arial', fontSize: '16px', fontStyle: 'bold', color: '#ffffff',
+    }).setOrigin(0.5)
+    container.add(btn)
+    container.add(btnText)
+    btn.on('pointerover', () => btn.setFillStyle(0xf4845f))
+    btn.on('pointerout', () => btn.setFillStyle(0xe76f51))
+    btn.on('pointerup', () => {
+      this.playTone(660, 0.12, 0.12, 'triangle')
+      container.destroy()
+      this.scene.restart()
+    })
   }
 }
