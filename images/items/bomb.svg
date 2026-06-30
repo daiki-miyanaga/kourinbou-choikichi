@@ -1,0 +1,28 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- ビールジョッキ本体 -->
+  <rect x="18" y="25" width="28" height="35" rx="4" ry="4" fill="#F4E04D" stroke="#D4A574" stroke-width="2"/>
+  
+  <!-- ビール -->
+  <rect x="20" y="27" width="24" height="30" rx="2" ry="2" fill="#FFD700"/>
+  
+  <!-- 泡 -->
+  <ellipse cx="32" cy="25" rx="12" ry="6" fill="#FFFACD"/>
+  <circle cx="28" cy="22" r="3" fill="#FFFFFF" opacity="0.8"/>
+  <circle cx="36" cy="20" r="2.5" fill="#FFFFFF" opacity="0.8"/>
+  <circle cx="32" cy="18" r="2" fill="#FFFFFF" opacity="0.8"/>
+  
+  <!-- 取っ手 -->
+  <path d="M46 35 Q52 35 52 42 Q52 49 46 49" stroke="#D4A574" stroke-width="3" fill="none"/>
+  
+  <!-- 金箔キラキラエフェクト -->
+  <g fill="#FFD700" opacity="0.8">
+    <polygon points="25,30 27,32 25,34 23,32" />
+    <polygon points="39,35 41,37 39,39 37,37" />
+    <polygon points="28,45 30,47 28,49 26,47" />
+    <polygon points="36,42 37,43 36,44 35,43" />
+  </g>
+  
+  <!-- 爆弾の導火線 -->
+  <path d="M32 15 Q30 12 32 9 Q34 6 32 3" stroke="#8B4513" stroke-width="2" fill="none"/>
+  <circle cx="32" cy="3" r="2" fill="#FF4500"/>
+</svg>
