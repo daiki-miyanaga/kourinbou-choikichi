@@ -177,28 +177,76 @@ export function createBombs(b: Board, positions: { r: number; c: number }[]) {
   })
 }
 
-// 爆弾の爆発処理（3x3範囲を消去）
+// 爆弾の爆発処理（3x3範囲を消去、巻き込んだ爆弾は連鎖爆発）
 export function explodeBomb(b: Board, bombR: number, bombC: number): Set<string> {
   const exploded = new Set<string>()
-  
-  // 爆弾自体を消去
+  const queue: [number, number][] = [[bombR, bombC]]
   exploded.add(`${bombR},${bombC}`)
-  
-  // 3x3範囲の周囲を消去
-  for (let dr = -1; dr <= 1; dr++) {
-    for (let dc = -1; dc <= 1; dc++) {
-      const r = bombR + dr
-      const c = bombC + dc
-      if (inBounds(r, c) && b[r][c] !== 0) {
-        exploded.add(`${r},${c}`)
+
+  while (queue.length > 0) {
+    const [br, bc] = queue.shift()!
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const r = br + dr
+        const c = bc + dc
+        const key = `${r},${c}`
+        if (!inBounds(r, c) || b[r][c] === 0 || exploded.has(key)) continue
+        exploded.add(key)
+        if (isBomb(b[r][c])) queue.push([r, c])
       }
     }
   }
-  
+
   return exploded
 }
 
 // 爆弾かどうかを判定
 export function isBomb(value: Cell): boolean {
   return value === BOMB_VALUE
+}
+
+export interface Move {
+  from: { r: number; c: number }
+  to: { r: number; c: number }
+}
+
+// マッチを作れる手をひとつ探す（爆弾はそれ自体が有効手）
+export function findHintMove(b: Board): Move | null {
+  const rows = b.length
+  const cols = b[0]?.length ?? 0
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (isBomb(b[r][c])) return { from: { r, c }, to: { r, c } }
+      for (const [dr, dc] of [[0, 1], [1, 0]] as const) {
+        const r2 = r + dr
+        const c2 = c + dc
+        if (r2 >= rows || c2 >= cols) continue
+        swap(b, r, c, r2, c2)
+        const matched = findMatches(b).size > 0
+        swap(b, r, c, r2, c2)
+        if (matched) return { from: { r, c }, to: { r: r2, c: c2 } }
+      }
+    }
+  }
+  return null
+}
+
+export function hasValidMove(b: Board): boolean {
+  return findHintMove(b) !== null
+}
+
+// 手詰まり時のシャッフル。爆弾の位置は保持し、
+// 初期マッチなし & 有効手ありの盤面になるまで再抽選する
+export function shuffleBoard(b: Board, types = TYPES) {
+  const rows = b.length
+  const cols = b[0]?.length ?? 0
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const fresh = createBoard(rows, cols, types)
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (!isBomb(b[r][c])) b[r][c] = fresh[r][c]
+      }
+    }
+    if (findMatches(b).size === 0 && hasValidMove(b)) return
+  }
 }
